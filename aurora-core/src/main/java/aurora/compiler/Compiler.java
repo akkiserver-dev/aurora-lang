@@ -1,5 +1,6 @@
 package aurora.compiler;
 
+import aurora.analyzer.TypeChecker;
 import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;
 import aurora.parser.tree.expr.*;
@@ -103,7 +104,7 @@ public class Compiler implements NodeVisitor<Void> {
         TypeChecker checker = new TypeChecker(program, null);
         checker.visitProgram(program);
         if (!checker.getDiagnostics().isEmpty()) {
-            throw new RuntimeException("Type Error: " + checker.getDiagnostics().get(0).getMessage());
+            throw new RuntimeException("Type Error: " + checker.getDiagnostics().getFirst());
         }
         this.globals = checker.getGlobals();
 
@@ -800,23 +801,6 @@ public class Compiler implements NodeVisitor<Void> {
 
     @Override
     public Void visitCallExpr(CallExpr expr) {
-        /*
-        // 1. Get the class (it's a global)
-        int nameIndex = chunk.addConstant(expr.type.name);
-        chunk.write(OpCode.GET_GLOBAL.ordinal(), expr.loc.line(), expr.loc.column());
-        chunk.write(nameIndex, expr.loc.line(), expr.loc.column());
-
-        // 2. Evaluate arguments
-        for (CallExpr.Argument arg : expr.arguments) {
-            visitExpr(arg.value);
-        }
-
-        // 3. Call NEW opcode.
-        chunk.write(OpCode.NEW.ordinal(), expr.loc.line(), expr.loc.column());
-        chunk.write(expr.arguments.size(), expr.loc.line(), expr.loc.column());
-
-        return null;
-         */
         if (expr.callee instanceof AccessExpr access && access.object instanceof SuperExpr) {
             // Super call: super.method(args)
             // Push 'self'
@@ -851,12 +835,14 @@ public class Compiler implements NodeVisitor<Void> {
 
         if (expr.callee instanceof AccessExpr bare && bare.object == null) {
             Declaration decl = globals.get(bare.member);
+            String resolvedName = bare.member; // 基本はそのままの名前
             if (decl == null) {
                 decl = globals.get(fqn(bare.member));
+                if (decl != null) resolvedName = fqn(bare.member); // FQNで見つかった場合はFQNを使う
             }
             if (decl instanceof ClassDecl || decl instanceof RecordDecl) {
-                String fullName = fqn(bare.member);
-                int nameIndex = chunk.addConstant(fullName);
+                // String fullName = fqn(bare.member); // ← 削除
+                int nameIndex = chunk.addConstant(resolvedName); // ← fullName の代わりに resolvedName を使用
                 chunk.write(OpCode.GET_GLOBAL.ordinal(), expr.loc.line(), expr.loc.column());
                 chunk.write(nameIndex, expr.loc.line(), expr.loc.column());
 
@@ -1759,10 +1745,13 @@ public class Compiler implements NodeVisitor<Void> {
                 CompiledFunction cf = compileFunction(func, !isStatic);
                 cls.methods.put(func.name, cf);
             }
-        }        if (constructor != null) {
+        }
+
+        if (constructor != null) {
             FunctionDecl func = new FunctionDecl(constructor.loc, "<init>", null, constructor.visibility,
                     List.of(), List.of(), constructor.params, null, constructor.body, false);
             CompiledFunction cf = compileFunction(func, true);
+            cls.initializer = cf;
             cls.methods.put("<init>", cf);
         }
 

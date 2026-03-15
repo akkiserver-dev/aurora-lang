@@ -21,11 +21,11 @@ pub trait Sendable {}
 pub class Mutex<T> : Sendable {
     var value: T
 
-    public constructor(value: T) {
+    constructor(value: T) {
         self.value = value
     }
 
-    pub fun withLock<R>(action: (T) -> R) -> R {
+    pub fun withLock<R>(action: (T) => R) -> R {
         self.lock()
         val result = action(self.value)
         self.unlock()

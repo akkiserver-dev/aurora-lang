@@ -1,15 +1,11 @@
-package aurora.compiler;
+package aurora.analyzer;
 
-import aurora.lsp.ModuleResolver;
 import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;
 import aurora.parser.tree.expr.*;
 import aurora.parser.tree.stmt.*;
 import aurora.parser.tree.util.BinaryOperator;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
+import aurora.parser.tree.expr.LiteralExpr.LiteralType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,11 +15,11 @@ import java.util.Map;
 /**
  * A static analysis pass that evaluates type safety, focusing on nullability and basic inheritance.
  * This class implements a {@link NodeVisitor} that traverses the AST and collects type information,
- * reporting errors as {@link Diagnostic} objects for use in the CLI or LSP.
+ * reporting errors as {@link AuroraDiagnostic} objects for use in the CLI or LSP.
  */
 public class TypeChecker implements NodeVisitor<TypeNode> {
     /** A list of diagnostics (errors and warnings) found during analysis. */
-    private final List<Diagnostic> diagnostics = new ArrayList<>();
+    private final List<AuroraDiagnostic> diagnostics = new ArrayList<>();
 
     /** A stack of symbol tables representing nested scopes. */
     private final List<Map<String, TypeNode>> scopes = new ArrayList<>();
@@ -59,9 +55,9 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
     /**
      * Returns the list of diagnostics collected during analysis.
      *
-     * @return A list of {@link Diagnostic} objects.
+     * @return A list of {@link AuroraDiagnostic} objects.
      */
-    public List<Diagnostic> getDiagnostics() {
+    public List<AuroraDiagnostic> getDiagnostics() {
         return diagnostics;
     }
 
@@ -72,14 +68,7 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
      * @param message The error message.
      */
     public void reportError(Node node, String message) {
-        Diagnostic diag = new Diagnostic();
-        int line = Math.max(0, node.loc.line() - 1);
-        int col = Math.max(0, node.loc.column());
-        diag.setRange(new Range(new Position(line, col), new Position(line, col + 1))); // Quick range
-        diag.setSeverity(DiagnosticSeverity.Error);
-        diag.setSource("Aurora TypeChecker");
-        diag.setMessage(message);
-        diagnostics.add(diag);
+        diagnostics.add(AuroraDiagnostic.error(node.loc, message, "Aurora TypeChecker"));
     }
 
     public Map<String, Declaration> getGlobals() {
@@ -158,7 +147,7 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         }
 
         // Check inheritance
-        Node valDecl = aurora.lsp.SymbolResolver.resolveTypeName(currentProgram, value.name, modules);
+        Node valDecl = SymbolResolver.resolveTypeName(currentProgram, value.name, modules);
         return inherits(valDecl, target.name);
     }
 
@@ -178,12 +167,12 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
                 if (cls.name.equals(targetName))
                     return true;
                 if (cls.superClass != null
-                        && inherits(aurora.lsp.SymbolResolver.resolveTypeName(currentProgram, cls.superClass.name, modules),
+                        && inherits(SymbolResolver.resolveTypeName(currentProgram, cls.superClass.name, modules),
                         targetName))
                     return true;
                 if (cls.interfaces != null) {
                     for (TypeNode iface : cls.interfaces) {
-                        if (inherits(aurora.lsp.SymbolResolver.resolveTypeName(currentProgram, iface.name, modules),
+                        if (inherits(SymbolResolver.resolveTypeName(currentProgram, iface.name, modules),
                                 targetName))
                             return true;
                     }
@@ -194,7 +183,7 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
                     return true;
                 if (rec.implementsInterfaces != null) {
                     for (TypeNode iface : rec.implementsInterfaces) {
-                        if (inherits(aurora.lsp.SymbolResolver.resolveTypeName(currentProgram, iface.name, modules),
+                        if (inherits(SymbolResolver.resolveTypeName(currentProgram, iface.name, modules),
                                 targetName))
                             return true;
                     }
@@ -205,7 +194,7 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
                     return true;
                 if (iface.interfaces != null) {
                     for (TypeNode parent : iface.interfaces) {
-                        if (inherits(aurora.lsp.SymbolResolver.resolveTypeName(currentProgram, parent.name, modules),
+                        if (inherits(SymbolResolver.resolveTypeName(currentProgram, parent.name, modules),
                                 targetName))
                             return true;
                     }
@@ -610,13 +599,13 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
     @Override
     public TypeNode visitLiteralExpr(LiteralExpr expr) {
         return switch (expr.type) {
-            case INT -> new TypeNode(expr.loc, "int");
-            case STRING -> new TypeNode(expr.loc, "string");
-            case NULL -> NONE;
-            case BOOL -> new TypeNode(expr.loc, "bool");
-            case FLOAT -> new TypeNode(expr.loc, "float");
-            case DOUBLE -> new TypeNode(expr.loc, "double");
-            case LONG -> new TypeNode(expr.loc, "long");
+            case LiteralType.INT -> new TypeNode(expr.loc, "int");
+            case LiteralType.STRING -> new TypeNode(expr.loc, "string");
+            case LiteralType.NULL -> NONE;
+            case LiteralType.BOOL -> new TypeNode(expr.loc, "bool");
+            case LiteralType.FLOAT -> new TypeNode(expr.loc, "float");
+            case LiteralType.DOUBLE -> new TypeNode(expr.loc, "double");
+            case LiteralType.LONG -> new TypeNode(expr.loc, "long");
         };
     }
 
@@ -667,10 +656,10 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
                         for (int i = 0; i < cons.params.size(); i++) {
                             TypeNode expectedType = cons.params.get(i).type;
                             TypeNode actualType = argTypes.get(i);
-                            
+
                             // Simple generic bypass for now: if expected is a single uppercase letter, assume it's a generic parameter
                             boolean isGeneric = expectedType.name.length() == 1 && Character.isUpperCase(expectedType.name.charAt(0));
-                            
+
                             if (!isGeneric && !isAssignable(expectedType, actualType)) {
                                 reportError(expr.arguments.get(i).value,
                                         "Argument " + (i + 1) + " expects '" + expectedType + "', but got '"

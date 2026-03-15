@@ -3,7 +3,7 @@ namespace Aurora.FileSystem
 use Aurora.Runtime.RuntimeError
 
 pub object FileSystem {
-    pub fun open(path: Path, mode: FileIOMode = Mode::Read) -> Result<FileHandle, IOError> {/* TODO */}
+    pub fun open(path: Path, mode: Mode = Mode::Read) -> Result<FileHandle, IOError> {/* TODO */}
 }
 
 pub class FileHandle {

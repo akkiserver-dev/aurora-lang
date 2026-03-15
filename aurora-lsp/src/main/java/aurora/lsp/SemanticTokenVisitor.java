@@ -1,5 +1,7 @@
 package aurora.lsp;
 
+import aurora.analyzer.ModuleResolver;
+import aurora.analyzer.SymbolResolver;
 import aurora.parser.SourceLocation;
 import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;

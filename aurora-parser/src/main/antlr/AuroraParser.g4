@@ -56,7 +56,7 @@ topLevelDeclaration
 // ==========================
 
 classDeclaration
-    : visibility? ABSTRACT? CLASS IDENTIFIER (LPAREN classParameterList RPAREN)? genericParameters? inheritance? classBody
+    : visibility? ABSTRACT? (CLASS | OBJECT) IDENTIFIER (LPAREN classParameterList RPAREN)? genericParameters? inheritance? classBody
     ;
 
 classBody
@@ -151,7 +151,7 @@ enumMemberBody
 // ==========================
 
 functionDeclaration
-    : visibility? functionModifier* FUN (typeType DOT)? IDENTIFIER genericParameters? LPAREN parameterList? RPAREN (ARROW typeType)? functionBody?
+    : visibility? functionModifier* FUN (typeType DOT)? IDENTIFIER genericParameters? LPAREN parameterList? RPAREN (ARROW typeType)? (functionBody | FAT_ARROW expression)?
     ;
 
 functionModifier

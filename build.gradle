@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 allprojects {
@@ -28,3 +29,26 @@ subprojects {
         useJUnitPlatform()
     }
 }
+
+dependencies {
+    subprojects.each {
+        if (it.name != 'aurora-intellij') {
+            implementation it
+        }
+    }
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    manifest {
+        attributes(
+                'Main-Class': 'aurora.Main'
+        )
+    }
+}
+
+jar {
+    enabled = false
+}
+
+tasks.jar.dependsOn(shadowJar)

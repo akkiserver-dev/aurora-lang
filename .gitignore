@@ -30,6 +30,8 @@ gen/
 
 ### Trash ###
 *.log
+*.zip
+test/
 
 ### VS Code ###
 .vscode/

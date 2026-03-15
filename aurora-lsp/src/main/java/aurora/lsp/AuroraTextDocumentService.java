@@ -1,7 +1,11 @@
 package aurora.lsp;
 
-import aurora.compiler.TypeChecker;
-import aurora.parser.AuroraParser;
+import aurora.analyzer.AnalysisResult;
+import aurora.analyzer.AuroraAnalyzer;
+import aurora.analyzer.AuroraDiagnostic;
+import aurora.analyzer.ModuleResolver;
+import aurora.analyzer.NodeFinder;
+import aurora.analyzer.SymbolResolver;
 import aurora.parser.tree.Declaration;
 import aurora.parser.tree.Node;
 import aurora.parser.tree.Program;
@@ -58,7 +62,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
     @Override
     public void didOpen(DidOpenTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
-        LspLogger.log("didOpen: " + uri);
+        AuroraLanguageServer.LOGGER.info("didOpen: " + uri);
         initProjectRoot(uri);
         hoverCache.keySet().removeIf(k -> k.startsWith(uri + ":"));
         validateDocument(uri, params.getTextDocument().getText());
@@ -71,7 +75,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
      * @param uri The URI of the document to start the search from.
      */
     private void initProjectRoot(String uri) {
-        if (moduleResolver.projectRoot != null)
+        if (moduleResolver.getProjectRoot() != null)
             return;
         try {
             // Derive project root from the document URI (walk up until we find aurora/lib
@@ -83,20 +87,20 @@ public class AuroraTextDocumentService implements TextDocumentService {
                         || candidate.resolve("pom.xml").toFile().exists()
                         || candidate.resolve("package.json").toFile().exists()) {
                     moduleResolver.setProjectRoot(candidate);
-                    LspLogger.log("  projectRoot set to: " + candidate);
+                    AuroraLanguageServer.LOGGER.info("  projectRoot set to: " + candidate);
                     return;
                 }
                 candidate = candidate.getParent();
             }
         } catch (Exception e) {
-            LspLogger.error("  initProjectRoot failed", e);
+            AuroraLanguageServer.LOGGER.error("  initProjectRoot failed", e);
         }
     }
 
     @Override
     public void didChange(DidChangeTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
-        LspLogger.log("didChange: " + uri);
+        AuroraLanguageServer.LOGGER.info("didChange: " + uri);
         hoverCache.keySet().removeIf(k -> k.startsWith(uri + ":"));
         validateDocument(uri, params.getContentChanges().get(0).getText());
     }
@@ -235,7 +239,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
             return CompletableFuture.completedFuture(cached == EMPTY_HOVER ? null : cached);
         }
 
-        LspLogger.log("hover request: uri=%s line=%d char=%d  astMap.contains=%b",
+        AuroraLanguageServer.LOGGER.info("hover request: uri=%s line=%d char=%d  astMap.contains=%b",
                 uri, line, charPos, program != null);
 
         if (program == null) {
@@ -247,13 +251,13 @@ public class AuroraTextDocumentService implements TextDocumentService {
         List<Node> path = finder.findPath(program);
         Node node = (path != null && !path.isEmpty()) ? path.get(path.size() - 1) : null;
 
-        LspLogger.log("  NodeFinder result: pathSize=%d  node=%s",
+        AuroraLanguageServer.LOGGER.info("  NodeFinder result: pathSize=%d  node=%s",
                 path != null ? path.size() : -1,
                 node != null ? node.getClass().getSimpleName() + " @ " + node.loc : "null");
 
         Node decl = SymbolResolver.resolve(node, path, program, moduleResolver);
 
-        LspLogger.log("  SymbolResolver result: %s",
+        AuroraLanguageServer.LOGGER.info("  SymbolResolver result: %s",
                 decl != null ? decl.getClass().getSimpleName() : "null");
 
         if (decl != null) {
@@ -373,58 +377,60 @@ public class AuroraTextDocumentService implements TextDocumentService {
     }
 
     /**
-     * Validates a document by parsing and type-checking it, then publishes diagnostics to the client.
-     *
-     * @param uri  The URI of the document to validate.
-     * @param text The current text content of the document.
+     * Validates a document by parsing and type-checking it via {@link AuroraAnalyzer},
+     * then publishes diagnostics to the client.
      */
     private void validateDocument(String uri, String text) {
-        LspLogger.log("validateDocument: %s  textLen=%d", uri, text.length());
+        AuroraLanguageServer.LOGGER.info("validateDocument: %s  textLen=%d", uri, text.length());
 
-        LspErrorListener errorListener = new LspErrorListener();
+        AnalysisResult result = new AuroraAnalyzer().analyze(text, uri);
 
-        try {
-            Program program = AuroraParser.parseWithListener(text, uri, errorListener);
-            astMap.put(uri, program);
-            LspLogger.log("  parse done: %d top-level stmts, %d syntax errors",
-                    program.statements != null ? program.statements.size() : -1,
-                    errorListener.getDiagnostics().size());
-
-            // Run Type Checking Pass
-            TypeChecker typeChecker = new TypeChecker(program, null);
-            typeChecker.visitProgram(program);
-            List<Diagnostic> typeDiags = typeChecker.getDiagnostics();
-            if (!typeDiags.isEmpty()) {
-                errorListener.getDiagnostics().addAll(typeDiags);
-                LspLogger.log("  type checker found %d errors", typeDiags.size());
-            }
-        } catch (Exception e) {
-            // Visitor exception (AST build failed) — keep old AST, add diagnostic
-            LspLogger.error("  parse FAILED for " + uri, e);
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Diagnostic diag = new Diagnostic();
-            diag.setRange(new Range(
-                    new Position(0, 0),
-                    new Position(0, 1)));
-            diag.setSeverity(DiagnosticSeverity.Error);
-            diag.setSource("Aurora LSP");
-            diag.setMessage("Internal parse error: " + msg);
-            errorListener.getDiagnostics().add(diag);
+        if (result.program != null) {
+            astMap.put(uri, result.program);
         }
 
+        AuroraLanguageServer.LOGGER.info("  analysis done: %d diagnostics", result.diagnostics.size());
+
+        List<Diagnostic> lspDiags = result.diagnostics.stream()
+                .map(AuroraTextDocumentService::toLspDiagnostic)
+                .collect(Collectors.toList());
+
         try {
-            server.getClient().publishDiagnostics(
-                    new PublishDiagnosticsParams(uri, errorListener.getDiagnostics()));
+            server.getClient().publishDiagnostics(new PublishDiagnosticsParams(uri, lspDiags));
         } catch (Exception e) {
-            LspLogger.error("Failed to publish diagnostics for " + uri, e);
+            AuroraLanguageServer.LOGGER.error("Failed to publish diagnostics for " + uri, e);
         }
+    }
+
+    /** {@link AuroraDiagnostic} を LSP4J の {@link Diagnostic} に変換する。 */
+    private static Diagnostic toLspDiagnostic(AuroraDiagnostic d) {
+        Diagnostic diag = new Diagnostic();
+        diag.setSource(d.source);
+        diag.setMessage(d.message);
+        diag.setSeverity(switch (d.severity) {
+            case WARNING     -> DiagnosticSeverity.Warning;
+            case INFORMATION -> DiagnosticSeverity.Information;
+            case HINT        -> DiagnosticSeverity.Hint;
+            default          -> DiagnosticSeverity.Error;
+        });
+        if (d.location != null) {
+            // SourceLocation は 1-based line、LSP は 0-based
+            int startLine = Math.max(0, d.location.line() - 1);
+            int startCol  = Math.max(0, d.location.column());
+            int endLine   = Math.max(0, d.location.endLine() - 1);
+            int endCol    = Math.max(startCol + 1, d.location.endColumn());
+            diag.setRange(new Range(new Position(startLine, startCol), new Position(endLine, endCol)));
+        } else {
+            diag.setRange(new Range(new Position(0, 0), new Position(0, 1)));
+        }
+        return diag;
     }
 
     @Override
     public CompletableFuture<SemanticTokens> semanticTokensFull(SemanticTokensParams params) {
         String uri = params.getTextDocument().getUri();
         Program program = astMap.get(uri);
-        LspLogger.log("semanticTokensFull request for " + uri + " (AST exists: " + (program != null) + ")");
+        AuroraLanguageServer.LOGGER.info("semanticTokensFull request for " + uri + " (AST exists: " + (program != null) + ")");
         if (program == null) {
             return CompletableFuture.completedFuture(new SemanticTokens(Collections.emptyList()));
         }
@@ -433,7 +439,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
             List<Integer> tokens = SemanticTokenVisitor.getTokens(program, moduleResolver);
             return CompletableFuture.completedFuture(new SemanticTokens(tokens));
         } catch (Exception e) {
-            LspLogger.error("Failed to generate semantic tokens for " + uri, e);
+            AuroraLanguageServer.LOGGER.error("Failed to generate semantic tokens for " + uri, e);
             return CompletableFuture.completedFuture(new SemanticTokens(Collections.emptyList()));
         }
     }

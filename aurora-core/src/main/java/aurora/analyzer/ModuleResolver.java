@@ -1,16 +1,16 @@
-package aurora.lsp;
+package aurora.analyzer;
 
 import aurora.parser.AuroraParser;
 import aurora.parser.tree.Declaration;
 import aurora.parser.tree.Program;
 import aurora.parser.tree.Statement;
-import aurora.parser.tree.decls.*;
+import aurora.parser.tree.decls.ClassDecl;
+import aurora.parser.tree.decls.FunctionDecl;
+import aurora.parser.tree.decls.InterfaceDecl;
+import aurora.parser.tree.decls.RecordDecl;
 
-import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,6 +43,10 @@ public class ModuleResolver {
 
     public void setProjectRoot(Path root) {
         this.projectRoot = root;
+    }
+
+    public Path getProjectRoot() {
+        return projectRoot;
     }
 
     /** Invalidate a cached module when its source file changes. */
@@ -121,16 +125,16 @@ public class ModuleResolver {
         return moduleCache.computeIfAbsent(importPath, path -> {
             Path file = resolveFile(path);
             if (file == null || !Files.exists(file)) {
-                LspLogger.log("  ModuleResolver: cannot find file for import '%s'", path);
+                System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG, () -> String.format("  ModuleResolver: cannot find file for import '%s'", path));
                 return null;
             }
             try {
                 String src = Files.readString(file);
-                LspLogger.log("  ModuleResolver: loading '%s' from %s", path, file);
-                LspErrorListener errs = new LspErrorListener();
+                System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG, () -> String.format("  ModuleResolver: loading '%s' from %s", path, file));
+                org.antlr.v4.runtime.BaseErrorListener errs = new org.antlr.v4.runtime.BaseErrorListener();
                 return AuroraParser.parseWithListener(src, file.toUri().toString(), errs);
             } catch (Exception e) {
-                LspLogger.error("  ModuleResolver: failed to load " + path, e);
+                System.getLogger("aurora.analyzer").log(System.Logger.Level.WARNING, "  ModuleResolver: failed to load " + path, e);
                 return null;
             }
         });

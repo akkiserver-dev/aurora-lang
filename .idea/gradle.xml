@@ -8,11 +8,10 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/aurora-cli" />
-            <option value="$PROJECT_DIR$/aurora-compiler" />
+            <option value="$PROJECT_DIR$/aurora-core" />
             <option value="$PROJECT_DIR$/aurora-intellij" />
             <option value="$PROJECT_DIR$/aurora-lsp" />
             <option value="$PROJECT_DIR$/aurora-parser" />
-            <option value="$PROJECT_DIR$/runtime" />
           </set>
         </option>
       </GradleProjectSettings>

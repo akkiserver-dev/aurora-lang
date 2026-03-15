@@ -1,4 +1,4 @@
-package aurora.lsp;
+package aurora.compiler;
 
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.RecognitionException;
@@ -15,7 +15,7 @@ import java.util.List;
  * ANTLR4 error listener that collects syntax errors and translates them into LSP {@link Diagnostic} objects.
  * This class handles coordinate translation (1-based to 0-based) and provides user-friendly error messages.
  */
-public class LspErrorListener extends BaseErrorListener {
+public class ErrorListener extends BaseErrorListener {
     /** A list of diagnostics collected during the parsing process. */
     private final List<Diagnostic> diagnostics = new ArrayList<>();
 
@@ -62,7 +62,7 @@ public class LspErrorListener extends BaseErrorListener {
         diag.setMessage(cleanMessage(msg));
         diagnostics.add(diag);
 
-        LspLogger.log("  syntax error at %d:%d — %s", line, charPositionInLine, msg);
+        //LspLogger.log("  syntax error at %d:%d — %s", line, charPositionInLine, msg);
     }
 
     public List<Diagnostic> getDiagnostics() {

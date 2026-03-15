@@ -612,8 +612,7 @@ public class VM {
                                 }
                             }
                         }
-                        throw new AuroraRuntimeException("Undefined property or method: " + name + " for "
-                                + instance.getClass().getSimpleName());
+                        throw new AuroraRuntimeException("Undefined property or method: " + name + " for " + instance.getClass().getSimpleName());
                     }
                     case SET_PROPERTY: {
                         String name = ((ArString) frame.chunk.constants.get(frame.chunk.code[frame.pc++])).value;

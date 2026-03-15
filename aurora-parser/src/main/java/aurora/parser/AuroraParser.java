@@ -93,7 +93,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
      * Removes the default console error listener so stderr is not polluted.
      */
     public static Program parseWithListener(String code, String sourceName,
-            org.antlr.v4.runtime.ANTLRErrorListener errorListener) {
+                                            org.antlr.v4.runtime.ANTLRErrorListener errorListener) {
         AuroraLexer lexer = new AuroraLexer(CharStreams.fromString(code));
         lexer.removeErrorListeners();
         lexer.addErrorListener(errorListener);
@@ -254,10 +254,20 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
                 ? ctx.parameterList().parameter().stream().map(this::visit).map(p -> (ParamDecl) p).toList()
                 : Collections.emptyList();
 
-        TypeNode retType = ctx.typeType() != null ? (TypeNode) visit(ctx.typeType()) : new TypeNode(loc(ctx), "Void");
+        // (typeType DOT)? IDENTIFIER ... (ARROW typeType)?
+        // typeType(0) = receiver type when DOT is present; last typeType = return type when ARROW is present
+        TypeNode receiverType = null;
+        TypeNode retType;
+        if (ctx.DOT() != null) {
+            // Extension function: first typeType is receiver
+            receiverType = (TypeNode) visit(ctx.typeType(0));
+            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(1)) : new TypeNode(loc(ctx), "Void");
+        } else {
+            // Normal function: first typeType (if any) is the return type
+            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(0)) : new TypeNode(loc(ctx), "Void");
+        }
 
         List<GenericParameter> typeParams = getTypeParams(ctx.genericParameters());
-        List<TypeNode> expectsTypes = getExpectsTypes(ctx.expectsClause());
 
         BlockStmt body = null;
         boolean isExprBody = false;
@@ -272,13 +282,11 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
                 SourceLocation l = loc(ctx);
                 body = new BlockStmt(l, Collections.singletonList(new ControlStmt.ReturnStmt(l, expr)));
                 isExprBody = true;
-                bodyNode = visit(ctx.functionBody().expression());
-                isExpressionBody = true;
             }
         }
 
-        return new FunctionDecl(loc(ctx), name, receiverType, vis, modifiers, typeParams, params,
-                retType, bodyNode, isExpressionBody);
+        return new FunctionDecl(loc(ctx), name, receiverType, vis, mods, typeParams, params,
+                retType, body, isExprBody);
     }
 
     // Helper to get types from expects clause directly
@@ -362,7 +370,6 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
                         param.name,
                         null,
                         false,
-                        false,
                         param.isImmutable ? FieldDecl.Type.VAL : FieldDecl.Type.VAR,
                         param.type,
                         param.defaultValue);
@@ -415,10 +422,10 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
     @Override
     public Node visitRecordDeclaration(RecordDeclarationContext ctx) {
         Visibility vis = getVisibility(ctx.visibility());
-        List<GenericParameter> typeParams = getTypeParams(ctx.genericParameters());
+        List<GenericParameter> typeParams = Collections.emptyList();
         List<ClassParamDecl> params = ctx.classParameterList() != null
                 ? ctx.classParameterList().classParameter().stream().map(this::visit)
-                        .map(p -> (ClassParamDecl) p).toList()
+                .map(p -> (ClassParamDecl) p).toList()
                 : Collections.emptyList();
         List<TypeNode> interfaces = new ArrayList<>();
         if (ctx.inheritance() != null) {
@@ -521,7 +528,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
         List<ParamDecl> params = ctx.parameterList() != null
                 ? ctx.parameterList().parameter().stream().map(this::visit).map(p -> (ParamDecl) p).toList()
                 : Collections.emptyList();
-        TypeNode retType = ctx.typeType() != null ? (TypeNode) visit(ctx.typeType()) : new TypeNode(loc(ctx), "Void");
+        TypeNode retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(ctx.DOT() != null ? 1 : 0)) : new TypeNode(loc(ctx), "Void");
 
         return new MethodSignature(loc(ctx), name, vis, isAsync,
                 typeParams.stream().map(param -> param.name).toList(), params, retType);
@@ -758,7 +765,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
     public Node visitArrayLit(ArrayLitContext ctx) {
         List<Expr> elements = ctx.arrayLiteral().elementList() != null
                 ? ctx.arrayLiteral().elementList().expression().stream().map(e -> (Expr) visit(e))
-                        .collect(Collectors.toList())
+                .collect(Collectors.toList())
                 : Collections.emptyList();
         return new ArrayExpr(loc(ctx), elements);
     }

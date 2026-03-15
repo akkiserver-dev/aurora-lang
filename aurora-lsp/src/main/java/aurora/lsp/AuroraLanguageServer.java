@@ -2,6 +2,8 @@ package aurora.lsp;
 
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
@@ -12,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
  * such as hover, definition lookup, completion, and semantic highlighting.
  */
 public class AuroraLanguageServer implements LanguageServer, LanguageClientAware {
+    public static final Logger LOGGER = LoggerFactory.getLogger(AuroraLanguageServer.class);
+
     /** The client proxy used to send diagnostics and other messages back to the IDE. */
     private LanguageClient client;
 

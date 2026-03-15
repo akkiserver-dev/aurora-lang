@@ -1,10 +1,14 @@
 package aurora;
 
 import aurora.compiler.Compiler;
+import aurora.lsp.AuroraLanguageServer;
 import aurora.parser.AuroraParser;
 import aurora.parser.tree.Program;
 import aurora.runtime.Chunk;
 import aurora.runtime.VM;
+import org.eclipse.lsp4j.jsonrpc.Launcher;
+import org.eclipse.lsp4j.launch.LSPLauncher;
+import org.eclipse.lsp4j.services.LanguageClient;
 import picocli.CommandLine;
 
 import java.io.BufferedOutputStream;
@@ -239,11 +243,11 @@ public final class Main implements Runnable {
         public Integer call() {
             try {
                 // Initialize server
-                aurora.lsp.AuroraLanguageServer server = new aurora.lsp.AuroraLanguageServer();
+                AuroraLanguageServer server = new aurora.lsp.AuroraLanguageServer();
 
                 // Create LSP launcher
                 // We use System.in and System.out for communication
-                org.eclipse.lsp4j.jsonrpc.Launcher<org.eclipse.lsp4j.services.LanguageClient> launcher = org.eclipse.lsp4j.launch.LSPLauncher
+                Launcher<LanguageClient> launcher = LSPLauncher
                         .createServerLauncher(server, System.in, System.out);
 
                 // Connect the server to the client (proxy)

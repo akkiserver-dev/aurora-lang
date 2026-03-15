@@ -1,12 +1,12 @@
-package aurora.lsp;
+package aurora.analyzer;
 
+import aurora.analyzer.ModuleResolver;
 import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;
 import aurora.parser.tree.expr.AccessExpr;
 import aurora.parser.tree.expr.CallExpr;
 import aurora.parser.tree.expr.SelfExpr;
 import aurora.parser.tree.stmt.BlockStmt;
-import aurora.parser.tree.stmt.ExprStmt;
 
 import java.util.List;
 

@@ -7,9 +7,21 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <fileType
-                name="Aurora"
+                name="Aurora Source"
                 language="aurora"
                 implementationClass="aurora.intellij.AuroraLangFileType"
                 extensions="ar"/>
+        <lang.parserDefinition
+                language="aurora"
+                implementationClass="aurora.intellij.AuroraParserDefinition"/>
+        <lang.documentationProvider
+                language="aurora"
+                implementationClass="aurora.intellij.AuroraDocumentationProvider"/>
+        <lang.syntaxHighlighterFactory
+                language="aurora"
+                implementationClass="aurora.intellij.AuroraSyntaxHighlighterFactory"/>
+        <externalAnnotator
+                language="aurora"
+                implementationClass="aurora.intellij.AuroraExternalAnnotator"/>
     </extensions>
 </idea-plugin>
