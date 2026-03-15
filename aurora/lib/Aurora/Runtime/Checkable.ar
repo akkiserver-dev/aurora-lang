@@ -1,0 +1,5 @@
+namespace Aurora.Runtime
+
+pub trait Checkable<in T> {
+    pub fun check(v: T) -> bool
+}

@@ -1,0 +1,12 @@
+plugins {
+    id "application"
+}
+
+dependencies {
+    implementation "info.picocli:picocli:4.7.3"
+    implementation "commons-cli:commons-cli:1.5.0"
+}
+
+application {
+    mainClass = "aurora.Main"
+}

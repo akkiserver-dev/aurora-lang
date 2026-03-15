@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+    id 'org.jetbrains.intellij.platform' version '2.3.0'
+}
+
+repositories {
+    mavenCentral()
+
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
+dependencies {
+    implementation project(":aurora-core")
+    implementation project(":aurora-parser")
+
+    intellijPlatform {
+        intellijIdeaCommunity("2024.3.7")
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

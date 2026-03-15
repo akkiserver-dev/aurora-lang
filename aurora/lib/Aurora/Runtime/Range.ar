@@ -1,0 +1,26 @@
+namespace Aurora.Runtime
+
+pub abstract class Range<out T default int> : Checkable<T>, Iterable<T> {
+    local val min: T
+    local val max: T
+    local val exc: bool
+
+    constructor(min: T, max: T, exc: bool = true) {
+        self.min = min
+        self.max = max
+        self.exc = exc
+    }
+
+    pub fun min() -> T = self.min
+
+    pub fun max() -> T = self.max
+
+    /** Returns true if this range uses an exclusive upper bound (`..`). */
+    pub fun exclusive() -> bool = self.exc
+
+    pub override fun check(v: T) -> bool =
+        if exc (v >= min and v < max) else (v >= min and v <= max)
+
+    /** Returns a RangeIterator over this range. Used by for-in loops. */
+    pub override fun iterator() -> Iterator<T> = RangeIterator<T>(self)
+}

@@ -1,0 +1,21 @@
+namespace Aurora.FileSystem
+
+use Aurora.Runtime.RuntimeError
+
+pub object FileSystem {
+    pub fun open(path: Path, mode: FileIOMode = Mode::Read) -> Result<FileHandle, IOError> {/* TODO */}
+}
+
+pub class FileHandle {
+    pub fun read() -> Result<string, IOError> {/* TODO */}
+    pub fun write(data: string) -> Result<void, IOError> {/* TODO */}
+    pub fun close() -> void {/* TODO */}
+}
+
+pub enum Mode {
+    Read,
+    Write,
+    Append
+}
+
+pub class IOError : RuntimeError {}

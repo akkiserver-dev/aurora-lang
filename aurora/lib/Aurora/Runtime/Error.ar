@@ -1,0 +1,5 @@
+namespace Aurora.Runtime
+
+pub trait Error {
+    pub fun reason() -> string
+}

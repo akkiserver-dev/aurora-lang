@@ -1,0 +1,62 @@
+namespace Aurora.Runtime
+
+/**
+ * Represents a stateful cursor over a sequence of values.
+ * The VM's ITER_HAS_NEXT and ITER_NEXT opcodes dispatch to
+ * hasNext() and next() respectively when executing a for-in loop.
+ */
+pub trait Iterator<out T> {
+    /** Returns true if there is at least one value remaining. */
+    pub fun hasNext() -> bool
+
+    /**
+     * Advances the cursor and returns the next value.
+     * Behaviour is undefined if called when hasNext() is false.
+     */
+    pub fun next() -> T
+}
+
+/**
+ * Marks a type as iterable via a for-in loop.
+ * The VM checks for this trait (or at least for the iterator() method)
+ * when the right-hand side of `for x in expr` is not a plain Range.
+ */
+pub trait Iterable<out T> {
+    /** Returns a fresh Iterator positioned before the first element. */
+    pub fun iterator() -> Iterator<T>
+}
+
+// ---------------------------------------------------------------------------
+// RangeIterator – bridges Range<T> into the Iterator protocol
+// ---------------------------------------------------------------------------
+
+/**
+ * An Iterator that walks over a Range<T> value step-by-step.
+ * Handles both exclusive (`..`) and inclusive (`..=`) ranges.
+ *
+ * The VM implicitly wraps a Range in a RangeIterator when it encounters
+ * `for i in 1..10 { }` so that ITER_HAS_NEXT / ITER_NEXT work uniformly.
+ */
+pub class RangeIterator<out T default int> : Iterator<T> {
+    local val _min: T
+    local val _max: T
+    local val _exc: bool     // true  => exclusive upper bound (..)
+                             // false => inclusive upper bound (..=)
+    local var _current: T
+
+    constructor(range: Range<T>) {
+        self._min     = range.min()
+        self._max     = range.max()
+        self._exc     = range.exclusive()
+        self._current = range.min()
+    }
+
+    pub override fun hasNext() -> bool =
+        if _exc (_current < _max) else (_current <= _max)
+
+    pub override fun next() -> T {
+        val value = _current
+        _current = _current + 1
+        return value
+    }
+}

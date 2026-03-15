@@ -1,0 +1,51 @@
+namespace Aurora 
+
+use Aurora.Runtime.RuntimeError
+
+pub abstract class Result<T, E> {
+    pub fun isOk() -> bool {
+        return self is Ok
+    }
+
+    pub fun isErr() -> bool {
+        return self is Err
+    }
+
+    pub fun unwrap() -> T {
+        if self is Ok {
+            return (self as Ok).value
+        }
+        throw RuntimeError("called `Result.unwrap()` on an `Err` value: " + (self as Err).error)
+    }
+
+    pub fun unwrapErr() -> E {
+        if self is Err {
+            return (self as Err).error
+        }
+        throw RuntimeError("called `Result.unwrapErr()` on an `Ok` value: " + (self as Ok).value)
+    }
+}
+
+pub class Ok<T, E> : Result<T, E> {
+    pub val value: T
+
+    constructor(value: T) {
+        self.value = value
+    }
+
+    pub override fun toString() -> string {
+        return "Ok(" + self.value + ")"
+    }
+}
+
+pub class Err<T, E> : Result<T, E> {
+    pub val error: E
+
+    constructor(error: E) {
+        self.error = error
+    }
+
+    pub override fun toString() -> string {
+        return "Err(" + self.error + ")"
+    }
+}

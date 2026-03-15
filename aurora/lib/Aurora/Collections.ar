@@ -1,0 +1,24 @@
+namespace Aurora.Collections
+
+pub trait List<T> {
+    pub fun add(item: T) -> void
+    pub fun remove(index: int) -> T
+    pub fun get(index: int) -> T
+    pub fun size() -> int
+    pub fun isEmpty() -> bool
+}
+
+pub trait Set<T> {
+    pub fun add(item: T) -> bool
+    pub fun remove(item: T) -> bool
+    pub fun contains(item: T) -> bool
+    pub fun size() -> int
+}
+
+pub trait Map<K, V> {
+    pub fun put(key: K, value: V) -> void
+    pub fun get(key: K) -> V?
+    pub fun remove(key: K) -> V?
+    pub fun keys() -> Set<K>
+    pub fun values() -> List<V>
+}

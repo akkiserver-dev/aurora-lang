@@ -1,0 +1,15 @@
+<idea-plugin>
+    <id>aurora.intellij</id>
+    <name>Aurora</name>
+    <vendor>Aurora</vendor>
+
+    <idea-version since-build="243" until-build="243.*"/>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType
+                name="Aurora"
+                language="aurora"
+                implementationClass="aurora.intellij.AuroraLangFileType"
+                extensions="ar"/>
+    </extensions>
+</idea-plugin>

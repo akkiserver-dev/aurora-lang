@@ -1,0 +1,45 @@
+namespace Aurora.Runtime.Concurrent
+
+/**
+ * フューチャーインターフェース
+ */
+pub trait Future<T> {
+    pub fun wait() -> T?
+    pub fun wait(timeoutMillis: long) -> T?
+    pub fun cancel() -> bool
+    pub fun isDone() -> bool
+}
+
+/**
+ * 送信可能インターフェース (スレッド間での安全なデータ共有を示すマーカー)
+ */
+pub trait Sendable {}
+
+/**
+ * ミューテックス（排他制御）
+ */
+pub class Mutex<T> : Sendable {
+    var value: T
+
+    public constructor(value: T) {
+        self.value = value
+    }
+
+    pub fun withLock<R>(action: (T) -> R) -> R {
+        self.lock()
+        val result = action(self.value)
+        self.unlock()
+        return result
+    }
+
+    pub fun lock() -> void {
+        __native_mutex_lock(self)
+    }
+    
+    pub fun unlock() -> void {
+        __native_mutex_unlock(self)
+    }
+
+    local native fun __native_mutex_lock(mutex: Mutex<T>)
+    local native fun __native_mutex_unlock(mutex: Mutex<T>)
+}
