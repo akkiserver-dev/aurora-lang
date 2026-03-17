@@ -28,6 +28,56 @@ subprojects {
     test {
         useJUnitPlatform()
     }
+
+    apply plugin: 'maven-publish'
+    apply plugin: 'signing'
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+
+                groupId = "aurora"
+                artifactId = project.name
+                version = "0.1.0"
+
+                pom {
+                    name = project.name
+                    description = 'Aurora programming language component'
+                    url = 'https://github.com/akkiserver-dev/aurora-lang'
+                    licenses {
+                        license {
+                            name = 'MIT License'
+                            url = 'https://opensource.org/licenses/MIT'
+                        }
+                    }
+                    scm {
+                        url = 'https://github.com/akkiserver-dev/aurora-lang'
+                        connection = 'scm:git:git://github.com/akkiserver-dev/aurora-lang.git'
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                name = "akkiserver"
+                url = "https://maven.akkiserver.uk/repository/maven-snapshots/"
+
+                credentials {
+                    username = System.getenv("NEXUS_USERNAME")
+                    password = System.getenv("NEXUS_PASSWORD")
+                }
+            }
+        }
+    }
+
+    signing {
+        def signingKey = System.getenv("GPG_SIGNING_KEY")
+        def signingPassword = System.getenv("GPG_PASSWORD")
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign publishing.publications.mavenJava
+    }
 }
 
 dependencies {
