@@ -1,7 +1,9 @@
 package aurora.parser.tree.stmt;
 
 import aurora.parser.SourceLocation;
+import aurora.parser.tree.Expr;
 import aurora.parser.tree.Statement;
+import aurora.parser.tree.TypeNode;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -14,6 +16,7 @@ import java.util.stream.Collectors;
 public class BlockStmt extends Statement {
     /** The list of statements contained within this block, executed in order. */
     public final List<Statement> statements;
+    public TypeNode returnType = new TypeNode();
     private static int indentLevel = 0;
 
     /**

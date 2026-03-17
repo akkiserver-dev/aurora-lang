@@ -1,10 +1,10 @@
 package aurora.runtime.modules;
 
-import aurora.runtime.AuroraLib;
-import aurora.runtime.AuroraNative;
-import aurora.runtime.NativeBinder;
-import aurora.runtime.VM;
+import aurora.runtime.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Scanner;
 
 /**
@@ -14,24 +14,26 @@ import java.util.Scanner;
 @AuroraLib("Aurora.Io")
 public class IoModule implements NativeModule {
     private static final Scanner scanner = new Scanner(System.in);
+    private VM vm;
 
     @Override
     public void register(VM vm) {
+        this.vm = vm;
         NativeBinder.bind(vm, this);
     }
 
-    @AuroraNative("Aurora.Io._print(Lobject;)")
-    public void _print(Object msg) {
-        System.out.print(msg);
+    @AuroraNative("Aurora.Io.__native_io_print(Lobject;)")
+    public void Aurora_Io_print(ArObject msg) {
+        System.out.print(vm.arToString(msg));
     }
 
-    @AuroraNative("Aurora.Io._println(Lobject;)")
-    public void _println(Object msg) {
-        System.out.println(msg);
+    @AuroraNative("Aurora.Io.__native_io_println(Lobject;)")
+    public void Aurora_Io_println(ArObject msg) {
+        System.out.println(vm.arToString(msg));
     }
 
-    @AuroraNative("Aurora.Io._readLine()")
-    public String _readLine() {
+    @AuroraNative("Aurora.Io.__native_io_readLine()")
+    public String Aurora_Io_readLine() {
         if (scanner.hasNextLine()) {
             return scanner.nextLine();
         }
@@ -39,20 +41,20 @@ public class IoModule implements NativeModule {
     }
 
     @AuroraNative("Aurora.Io._readText(Lstring;)")
-    public String _readText(String path) {
+    public String Aurora_Io_readText(String path) {
         try {
-            return java.nio.file.Files.readString(java.nio.file.Path.of(path));
-        } catch (java.io.IOException e) {
-            throw new aurora.runtime.AuroraRuntimeException("Failed to read file: " + e.getMessage());
+            return Files.readString(Path.of(path));
+        } catch (IOException e) {
+            throw new AuroraRuntimeException("Failed to read file: " + e.getMessage());
         }
     }
 
     @AuroraNative("Aurora.Io._writeText(Lstring;Lstring;)")
-    public void _writeText(String path, String content) {
+    public void Aurora_Io_writeText(String path, String content) {
         try {
-            java.nio.file.Files.writeString(java.nio.file.Path.of(path), content);
-        } catch (java.io.IOException e) {
-            throw new aurora.runtime.AuroraRuntimeException("Failed to write to file: " + e.getMessage());
+            Files.writeString(Path.of(path), content);
+        } catch (IOException e) {
+            throw new AuroraRuntimeException("Failed to write to file: " + e.getMessage());
         }
     }
 }

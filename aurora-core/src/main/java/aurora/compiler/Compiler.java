@@ -104,7 +104,7 @@ public class Compiler implements NodeVisitor<Void> {
         TypeChecker checker = new TypeChecker(program, null);
         checker.visitProgram(program);
         if (!checker.getDiagnostics().isEmpty()) {
-            throw new RuntimeException("Type Error: " + checker.getDiagnostics().getFirst());
+            throw new TypeErrorException(checker.getDiagnostics());
         }
         this.globals = checker.getGlobals();
 
@@ -623,10 +623,10 @@ public class Compiler implements NodeVisitor<Void> {
 
     @Override
     public Void visitBinaryExpr(BinaryExpr expr) {
-        if (expr.op == BinaryOperator.ASSIGN || expr.op == BinaryOperator.PLUS_ASSIGN || 
-            expr.op == BinaryOperator.MINUS_ASSIGN || expr.op == BinaryOperator.STAR_ASSIGN || 
-            expr.op == BinaryOperator.SLASH_ASSIGN || expr.op == BinaryOperator.PERCENT_ASSIGN) {
-            
+        if (expr.op == BinaryOperator.ASSIGN || expr.op == BinaryOperator.PLUS_ASSIGN ||
+                expr.op == BinaryOperator.MINUS_ASSIGN || expr.op == BinaryOperator.STAR_ASSIGN ||
+                expr.op == BinaryOperator.SLASH_ASSIGN || expr.op == BinaryOperator.PERCENT_ASSIGN) {
+
             if (expr.left instanceof AccessExpr access) {
                 if (access.object == null && isClassMember(currentClass, access.member)
                         && resolveLocal(access.member) == -1) {
@@ -635,7 +635,7 @@ public class Compiler implements NodeVisitor<Void> {
                 }
                 if (access.object == null) {
                     int localIdx = resolveLocal(access.member);
-                    
+
                     if (expr.op != BinaryOperator.ASSIGN) {
                         // Compound assignment: target = target OP right
                         if (localIdx != -1) {
@@ -687,9 +687,9 @@ public class Compiler implements NodeVisitor<Void> {
                         return null;
                     }
                     visitExpr(access.object);
-                        if (expr.op != BinaryOperator.ASSIGN) {
-                            throw new UnsupportedOperationException("Compound assignment on object property is not fully supported yet.");
-                        }
+                    if (expr.op != BinaryOperator.ASSIGN) {
+                        throw new UnsupportedOperationException("Compound assignment on object property is not fully supported yet.");
+                    }
                     visitExpr(expr.right);
                     int nameIdx = chunk.addConstant(access.member);
                     chunk.write(OpCode.SET_PROPERTY.ordinal(), expr.loc.line(), expr.loc.column());
@@ -752,7 +752,7 @@ public class Compiler implements NodeVisitor<Void> {
             // `left in right` -> `right.check(left)`
             visitExpr(expr.right);
             visitExpr(expr.left);
-            
+
             int methodNameIndex = chunk.addConstant("check");
             chunk.write(OpCode.INVOKE.ordinal(), expr.loc.line(), expr.loc.column());
             chunk.write(methodNameIndex, expr.loc.line(), expr.loc.column());
@@ -865,37 +865,47 @@ public class Compiler implements NodeVisitor<Void> {
         }
 
         if (expr.callee instanceof AccessExpr access && access.object != null) {
-            // Check if it's a native namespace prefix rather than an object instance
-            String fqn = getFqn(access);
-            if (fqn != null && (fqn.startsWith("Aurora.") || fqn.startsWith("std."))) {
-                int nameIndex = chunk.addConstant(fqn);
-                chunk.write(OpCode.GET_GLOBAL.ordinal(), expr.loc.line(), expr.loc.column());
-                chunk.write(nameIndex, expr.loc.line(), expr.loc.column());
+
+            // Static method call: Class::method(args)
+            // CALL expects: callee at bottom, args on top.
+            // Push callee via GET_GLOBAL(class) + GET_PROPERTY(method), then args.
+            if (access.isStatic) {
+                // 1. Push callee: resolve class object, then extract the method
+                visitExpr(access.object);
+                int methodIdx = chunk.addConstant(access.member);
+                chunk.write(OpCode.GET_PROPERTY.ordinal(), expr.loc.line(), expr.loc.column());
+                chunk.write(methodIdx, expr.loc.line(), expr.loc.column());
+                // 2. Push args
                 for (CallExpr.Argument arg : expr.arguments) {
                     visitExpr(arg.value);
                 }
+                // 3. CALL
                 chunk.write(OpCode.CALL.ordinal(), expr.loc.line(), expr.loc.column());
                 chunk.write(expr.arguments.size(), expr.loc.line(), expr.loc.column());
                 return null;
             }
 
-            // Method call: object.method(args)
+            // Instance method call: object.method(args)
+            // レシーバの評価（インスタンスがスタックに積まれる）
             visitExpr(access.object);
+
+            // 引数の評価
             for (CallExpr.Argument arg : expr.arguments) {
                 visitExpr(arg.value);
             }
 
             int nameIndex = chunk.addConstant(access.member);
+
             chunk.write(OpCode.INVOKE.ordinal(), expr.loc.line(), expr.loc.column());
             chunk.write(nameIndex, expr.loc.line(), expr.loc.column());
             chunk.write(expr.arguments.size(), expr.loc.line(), expr.loc.column());
             return null;
         }
 
+        visitExpr(expr.callee);
         for (CallExpr.Argument arg : expr.arguments) {
             visitExpr(arg.value);
         }
-        visitExpr(expr.callee);
 
         chunk.write(OpCode.CALL.ordinal(), expr.loc.line(), expr.loc.column());
         chunk.write(expr.arguments.size(), expr.loc.line(), expr.loc.column());
@@ -915,6 +925,18 @@ public class Compiler implements NodeVisitor<Void> {
         if (expr.object == null && isClassMember(currentClass, expr.member)
                 && resolveLocal(expr.member) == -1 && inInstanceMethod) {
             expr = new AccessExpr(expr.loc, new SelfExpr(expr.loc), expr.member, expr.isSafe, expr.isStatic);
+        }
+
+        String maybeFqn = getFqn(expr);
+        if (maybeFqn != null && globals.containsKey(maybeFqn)) {
+            Declaration decl = globals.get(maybeFqn);
+            // 完全修飾名が既知のクラスや関数であれば、単一のグローバル変数として取得
+            if (decl instanceof ClassDecl || decl instanceof RecordDecl || decl instanceof FunctionDecl || decl instanceof FieldDecl) {
+                int nameIndex = chunk.addConstant(maybeFqn);
+                chunk.write(OpCode.GET_GLOBAL.ordinal(), expr.loc.line(), expr.loc.column());
+                chunk.write(nameIndex, expr.loc.line(), expr.loc.column());
+                return null;
+            }
         }
 
         if (expr.object == null) {
@@ -1244,17 +1266,17 @@ public class Compiler implements NodeVisitor<Void> {
      *
      * <p>Internal logic breakdown:</p>
      * <pre>
-     *   &lt;start&gt; -> SET_LOCAL $varName
-     *   &lt;end&gt;   -> SET_LOCAL $end
+     * &lt;start&gt; -> SET_LOCAL $varName
+     * &lt;end&gt;   -> SET_LOCAL $end
      * loopStart:
-     *   GET_LOCAL $varName
-     *   GET_LOCAL $end
-     *   LESS (or LESS_EQUAL for inclusive)
-     *   JUMP_IF_FALSE -> exitLoop
-     *   &lt;body&gt;
+     * GET_LOCAL $varName
+     * GET_LOCAL $end
+     * LESS (or LESS_EQUAL for inclusive)
+     * JUMP_IF_FALSE -> exitLoop
+     * &lt;body&gt;
      * continueTarget:
-     *   GET_LOCAL $varName + 1 -> SET_LOCAL $varName
-     *   JUMP -> loopStart
+     * GET_LOCAL $varName + 1 -> SET_LOCAL $varName
+     * JUMP -> loopStart
      * exitLoop:
      * </pre>
      *
@@ -1630,6 +1652,13 @@ public class Compiler implements NodeVisitor<Void> {
 
             int argCount = decl.params.size();
             int offset = isInstanceMethod ? 1 : 0;
+            // Total args passed to the native fn: self (if instance) + declared params
+            int totalCallArgs = argCount + offset;
+
+            // CALL expects: callee pushed first (bottom), then args on top.
+            // Push callee first so it ends up below the args on the stack.
+            wrapperChunk.write(OpCode.GET_GLOBAL.ordinal(), decl.loc.line(), decl.loc.column());
+            wrapperChunk.write(nameIdx, decl.loc.line(), decl.loc.column());
 
             if (isInstanceMethod) {
                 // Load self from slot 0
@@ -1641,10 +1670,8 @@ public class Compiler implements NodeVisitor<Void> {
                 wrapperChunk.write(OpCode.GET_LOCAL.ordinal(), decl.loc.line(), decl.loc.column());
                 wrapperChunk.write(i + offset, decl.loc.line(), decl.loc.column());
             }
-            wrapperChunk.write(OpCode.GET_GLOBAL.ordinal(), decl.loc.line(), decl.loc.column());
-            wrapperChunk.write(nameIdx, decl.loc.line(), decl.loc.column());
             wrapperChunk.write(OpCode.CALL.ordinal(), decl.loc.line(), decl.loc.column());
-            wrapperChunk.write(argCount, decl.loc.line(), decl.loc.column());
+            wrapperChunk.write(totalCallArgs, decl.loc.line(), decl.loc.column());
             wrapperChunk.write(OpCode.RETURN.ordinal(), decl.loc.line(), decl.loc.column());
 
             return new CompiledFunction(decl.name, wrapperChunk, argCount + (isInstanceMethod ? 1 : 0));
@@ -1990,7 +2017,7 @@ public class Compiler implements NodeVisitor<Void> {
 
         visitExpr(expr.start);
         visitExpr(expr.end);
-        
+
         if (expr.inclusive) {
             chunk.write(OpCode.TRUE.ordinal(), expr.loc.line(), expr.loc.column());
         } else {
@@ -1999,7 +2026,7 @@ public class Compiler implements NodeVisitor<Void> {
 
         chunk.write(OpCode.NEW.ordinal(), expr.loc.line(), expr.loc.column());
         chunk.write(3, expr.loc.line(), expr.loc.column());
-        
+
         return null;
     }
 

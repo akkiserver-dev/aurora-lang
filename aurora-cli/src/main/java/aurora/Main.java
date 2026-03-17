@@ -37,6 +37,58 @@ import java.util.concurrent.Callable;
 public final class Main implements Runnable {
 
     /**
+     * Formats an {@link aurora.analyzer.AuroraDiagnostic} into a Rust-style error message
+     * with ANSI colors, source location arrow, line snippet, and ^^^ pointer.
+     */
+    static String formatDiagnostic(aurora.analyzer.AuroraDiagnostic d, String sourceCode) {
+        final String RESET = "\u001B[0m";
+        final String RED   = "\u001B[31m";
+        final String BOLD  = "\u001B[1m";
+        final String CYAN  = "\u001B[36m";
+
+        StringBuilder sb = new StringBuilder();
+
+        // "error: <message>"
+        sb.append(RED).append(BOLD).append("error").append(RESET)
+                .append(BOLD).append("[type]: ").append(d.message).append(RESET).append("\n");
+
+        if (d.location == null) return sb.toString();
+
+        int line   = d.location.line();
+        int col    = d.location.column();    // 1-indexed
+        int endCol = d.location.endColumn(); // 1-indexed, inclusive
+
+        // "  --> file:line:col"
+        sb.append(CYAN).append("  --> ").append(RESET)
+                .append(d.location.sourceName()).append(":").append(line).append(":").append(col).append("\n");
+
+        if (sourceCode == null) return sb.toString();
+
+        String[] lines = sourceCode.split("\r?\n", -1);
+        if (line < 1 || line > lines.length) return sb.toString();
+
+        String srcLine   = lines[line - 1];
+        String lineNum   = String.valueOf(line);
+        String padding   = " ".repeat(lineNum.length());
+
+        sb.append(CYAN).append(padding).append(" |").append(RESET).append("\n");
+        sb.append(CYAN).append(lineNum).append(" | ").append(RESET).append(srcLine).append("\n");
+        sb.append(CYAN).append(padding).append(" | ").append(RESET);
+
+        // スペースで col-1 文字分パディング（タブはそのまま保持）
+        int startIdx = col - 1;
+        for (int i = 0; i < startIdx && i < srcLine.length(); i++) {
+            sb.append(srcLine.charAt(i) == '\t' ? '\t' : ' ');
+        }
+
+        // ^^^ の長さ: endCol - col + 1、最低1
+        int caretLen = (endCol >= col) ? (endCol - col + 1) : 1;
+        sb.append(RED).append(BOLD).append("^".repeat(caretLen)).append(RESET).append("\n");
+
+        return sb.toString();
+    }
+
+    /**
      * The main entry point of the application.
      * Executes the command line interface with the provided arguments.
      *
@@ -172,21 +224,51 @@ public final class Main implements Runnable {
                 }
 
                 String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
+
+                long parseStart = System.nanoTime();
                 Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
+                long parseEnd = System.nanoTime();
 
                 if (outputAst) {
                     System.out.println(program);
                 } else {
-                    Compiler compiler = new Compiler();
-                    Chunk rawChunk = compiler.compile(program);
+                    long compileStart = 0, compileEnd = 0, runStart = 0, runEnd = 0;
+                    try {
+                        compileStart = System.nanoTime();
+                        Compiler compiler = new Compiler();
+                        Chunk rawChunk = compiler.compile(program);
+                        compileEnd = System.nanoTime();
 
-                    VM vm = new VM();
-                    Chunk loadedChunk = vm.inflateChunk(rawChunk);
-                    vm.run(loadedChunk);
+                        VM vm = new VM();
+                        Chunk loadedChunk = vm.inflateChunk(rawChunk);
+
+                        runStart = System.nanoTime();
+                        vm.run(loadedChunk);
+                        runEnd = System.nanoTime();
+                    } finally {
+                        if (verbose && compileStart != 0) {
+                            long parseNs   = parseEnd   - parseStart;
+                            long compileNs = compileEnd - compileStart;
+                            long runNs     = (runEnd > 0) ? runEnd - runStart : 0;
+                            long totalNs   = parseNs + compileNs + runNs;
+                            System.err.println("\n--- Timing ---");
+                            System.err.printf("  parse:   %6.3f ms%n", parseNs   / 1_000_000.0);
+                            System.err.printf("  compile: %6.3f ms%n", compileNs / 1_000_000.0);
+                            System.err.printf("  run:     %6.3f ms%n", runNs     / 1_000_000.0);
+                            System.err.printf("  total:   %6.3f ms%n", totalNs   / 1_000_000.0);
+                        }
+                    }
                 }
                 return 0;
             } catch (aurora.parser.SyntaxErrorException e) {
                 System.err.println(e.getMessage());
+                return 1;
+            } catch (aurora.compiler.TypeErrorException e) {
+                String src = null;
+                try { src = Files.readString(sourceFile, StandardCharsets.UTF_8); } catch (IOException ignored) {}
+                for (aurora.analyzer.AuroraDiagnostic d : e.getDiagnostics()) {
+                    System.err.print(formatDiagnostic(d, src));
+                }
                 return 1;
             } catch (aurora.runtime.AuroraRuntimeException e) {
                 System.err.println("Uncaught Aurora Exception: " + e.getMessage());
@@ -294,10 +376,15 @@ public final class Main implements Runnable {
         public Integer call() {
             try {
                 String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
-                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
 
+                long parseStart = System.nanoTime();
+                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
+                long parseEnd = System.nanoTime();
+
+                long compileStart = System.nanoTime();
                 Compiler compiler = new Compiler();
                 Chunk chunk = compiler.compile(program);
+                long compileEnd = System.nanoTime();
 
                 Path outPath = outputFile != null ? outputFile
                         : sourceFile.resolveSibling(sourceFile.getFileName().toString().replace(".ar", ".arobj"));
@@ -314,9 +401,24 @@ public final class Main implements Runnable {
                     Main.writeChunk(out, chunk);
                 }
 
+                if (verbose) {
+                    long totalNs = (parseEnd - parseStart) + (compileEnd - compileStart);
+                    System.err.println("\n--- Timing ---");
+                    System.err.printf("  parse:   %6.3f ms%n", (parseEnd   - parseStart)   / 1_000_000.0);
+                    System.err.printf("  compile: %6.3f ms%n", (compileEnd - compileStart) / 1_000_000.0);
+                    System.err.printf("  total:   %6.3f ms%n", totalNs / 1_000_000.0);
+                }
+
                 return 0;
             } catch (aurora.parser.SyntaxErrorException e) {
                 System.err.println(e.getMessage());
+                return 1;
+            } catch (aurora.compiler.TypeErrorException e) {
+                String src = null;
+                try { src = Files.readString(sourceFile, StandardCharsets.UTF_8); } catch (IOException ignored) {}
+                for (aurora.analyzer.AuroraDiagnostic d : e.getDiagnostics()) {
+                    System.err.print(formatDiagnostic(d, src));
+                }
                 return 1;
             } catch (IOException e) {
                 System.err.println("[ERROR] Failed to read file: " + e.getMessage());
@@ -331,5 +433,5 @@ public final class Main implements Runnable {
             }
 
         }
-        }
+    }
 }

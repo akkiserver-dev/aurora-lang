@@ -341,7 +341,7 @@ public class VM {
         OBJECT_CLASS.methods.put("toString", new ArNativeFunction("toString", 1) {
             @Override
             public ArObject call(List<ArObject> args) {
-                return new ArString(args.get(0).toString());
+                return new ArString(args.getFirst().toString());
             }
         });
         OBJECT_CLASS.methods.put("<init>", new ArNativeFunction("<init>", -1) { // -1 for variadic/any
@@ -353,6 +353,22 @@ public class VM {
 
         registerModule(new IoModule());
         registerModule(new ConcurrentModule());
+    }
+
+    public String arToString(ArObject obj) {
+        if (obj instanceof ArInstance inst) {
+            ArObject strMethod = inst.klass.findMethod("str");
+            if (strMethod != null) {
+                callValue(strMethod, 0, inst);
+                runLoop();
+                ArObject result = stack.pop();
+                return result instanceof ArString s ? s.value : result.toString();
+            }
+            return "[" + inst.klass.name + "]";
+        }
+        if (obj instanceof ArClass klass) return "[class " + klass.name + "]";
+        if (obj instanceof ArNone)   return "none";
+        return obj.toString();
     }
 
     public void run(Chunk chunk) {
@@ -372,7 +388,7 @@ public class VM {
             OpCode op = OpCode.values()[instruction];
 
             // Debug trace
-            System.out.println("PC: " + frame.pc + " OP: " + op + " STACK: " + stack);
+            //System.out.println("PC: " + frame.pc + " OP: " + op + " STACK: " + stack);
 
             frame.pc++;
 
@@ -554,7 +570,7 @@ public class VM {
 
                         List<ArObject> args = new ArrayList<>();
                         for (int i = 0; i < argCount; i++) {
-                            args.add(0, stack.pop());
+                            args.addFirst(stack.pop());
                         }
                         ArObject maybeKlass = stack.pop();
                         if (!(maybeKlass instanceof ArClass klass)) {
@@ -632,7 +648,7 @@ public class VM {
 
                         List<ArObject> args = new ArrayList<>();
                         for (int i = 0; i < argCount; i++) {
-                            args.add(0, stack.pop());
+                            args.addFirst(stack.pop());
                         }
                         ArObject instance = stack.pop();
 
@@ -659,7 +675,7 @@ public class VM {
                             if (method != null) {
                                 for (ArObject arg : args)
                                     stack.push(arg);
-                                callValue(method, argCount, klass);
+                                callValue(method, argCount);
                                 break;
                             }
                             throw new AuroraRuntimeException("Undefined static method: " + name + " in " + klass.name);
@@ -694,7 +710,7 @@ public class VM {
 
                         List<ArObject> args = new ArrayList<>();
                         for (int i = 0; i < argCount; i++) {
-                            args.add(0, stack.pop());
+                            args.addFirst(stack.pop());
                         }
                         ArObject instance = stack.pop();
 
@@ -832,7 +848,7 @@ public class VM {
                         ArObject callee = stack.pop();
                         List<ArObject> args = new ArrayList<>();
                         for (int i = 0; i < argCount; i++) {
-                            args.add(0, stack.pop());
+                            args.addFirst(stack.pop());
                         }
 
                         CompletableFuture<ArObject> cf = CompletableFuture.supplyAsync(() -> {
@@ -914,7 +930,7 @@ public class VM {
                 }
             } catch (AuroraRuntimeException e) {
                 if (!handleException(e)) {
-                    e.printStackTrace();
+                    //e.printStackTrace();
                     return;
                 }
             } catch (Exception e) {
@@ -1073,47 +1089,48 @@ public class VM {
     }
 
     public void callValue(ArObject callee, int argCount, ArObject receiver) {
-        if (callee instanceof ArFunction function) {
-            int totalArgs = argCount + (receiver != null ? 1 : 0);
-            if (totalArgs != function.arity) {
-                throw new AuroraRuntimeException("Expected " + function.arity + " arguments but got " + totalArgs);
+        switch (callee) {
+            case ArFunction function -> {
+                int totalArgs = argCount + (receiver != null ? 1 : 0);
+                if (totalArgs != function.arity) {
+                    throw new AuroraRuntimeException("Expected " + function.arity + " arguments but got " + totalArgs);
+                }
+                Frame frame = new Frame(function.chunk, function, frames.peek());
+                // Arguments are on the stack. We need to put them into the frame's registers.
+                // If there's a receiver (self), it goes to slot 0.
+                int offset = (receiver != null) ? 1 : 0;
+                if (receiver != null) {
+                    frame.set(0, receiver);
+                }
+                // Arguments are pushed onto the stack in order, so the last argument is at the
+                // top.
+                // We should pop them and put them in registers in order.
+                for (int i = argCount - 1; i >= 0; i--) {
+                    frame.set(i + offset, stack.pop());
+                }
+                frames.push(frame);
             }
-            Frame frame = new Frame(function.chunk, function, frames.peek());
-            // Arguments are on the stack. We need to put them into the frame's registers.
-            // If there's a receiver (self), it goes to slot 0.
-            int offset = (receiver != null) ? 1 : 0;
-            if (receiver != null) {
-                frame.set(0, receiver);
+            case ArNativeFunction function -> {
+                int totalArgs = argCount + (receiver != null ? 1 : 0);
+                if (function.arity != -1 && totalArgs != function.arity) {
+                    throw new AuroraRuntimeException(
+                            "Expected " + function.arity + " arguments but got " + totalArgs + " (incl. receiver)");
+                }
+                List<ArObject> args = new ArrayList<>();
+                for (int i = 0; i < argCount; i++) {
+                    args.addFirst(stack.pop());
+                }
+                if (receiver != null) {
+                    args.addFirst(receiver);
+                }
+                stack.push(function.call(args));
             }
-            // Arguments are pushed onto the stack in order, so the last argument is at the
-            // top.
-            // We should pop them and put them in registers in order.
-            for (int i = argCount - 1; i >= 0; i--) {
-                frame.set(i + offset, stack.pop());
-            }
-            frames.push(frame);
-        } else if (callee instanceof ArNativeFunction function) {
-            int totalArgs = argCount + (receiver != null ? 1 : 0);
-            if (function.arity != -1 && totalArgs != function.arity) {
-                throw new AuroraRuntimeException(
-                        "Expected " + function.arity + " arguments but got " + totalArgs + " (incl. receiver)");
-            }
-            List<ArObject> args = new ArrayList<>();
-            for (int i = 0; i < argCount; i++) {
-                args.add(0, stack.pop());
-            }
-            if (receiver != null) {
-                args.add(0, receiver);
-            }
-            stack.push(function.call(args));
-        } else if (callee instanceof ArBoundMethod method) {
-            callValue(method.method, argCount, method.receiver);
-        } else if (callee instanceof ArClass) {
-            // Instantiation via class call? (Python style)
-            // The spec says 'new ClassName()', so maybe we don't support this.
-            throw new AuroraRuntimeException("Use 'new' to instantiate classes.");
-        } else {
-            throw new AuroraRuntimeException("Can only call functions and classes.");
+            case ArBoundMethod method -> callValue(method.method, argCount, method.receiver);
+            case ArClass arClass ->
+                // Instantiation via class call? (Python style)
+                // The spec says 'new ClassName()', so maybe we don't support this.
+                    throw new AuroraRuntimeException("Use 'new' to instantiate classes.");
+            case null, default -> throw new AuroraRuntimeException("Can only call functions and classes.");
         }
     }
 

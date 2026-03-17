@@ -119,6 +119,54 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
     }
 
     /**
+     * Looks up a member (field or method) by name within a class or record declaration,
+     * including inherited members from superclasses.
+     *
+     * @param typeName The name of the type to search in.
+     * @return The member's declaration, or {@code null} if not found.
+     */
+    private Declaration resolveMember(String typeName, String memberName) {
+        Node typeDecl = SymbolResolver.resolveTypeName(currentProgram, typeName, modules);
+        return resolveMemberInNode(typeDecl, memberName);
+    }
+
+    /**
+     * Recursively searches for a member in a type declaration node,
+     * walking up the superclass chain.
+     */
+    private Declaration resolveMemberInNode(Node typeDecl, String memberName) {
+        if (typeDecl instanceof ClassDecl cls) {
+            // Search members
+            if (cls.members != null) {
+                for (Declaration member : cls.members) {
+                    if (memberName.equals(member.name)) return member;
+                }
+            }
+            // Walk superclass chain
+            if (cls.superClass != null) {
+                Declaration found = resolveMember(cls.superClass.name, memberName);
+                if (found != null) return found;
+            }
+        } else if (typeDecl instanceof RecordDecl rec) {
+            if (rec.members != null) {
+                for (Declaration member : rec.members) {
+                    if (memberName.equals(member.name)) return member;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the declared type of a member declaration (field or function return type).
+     */
+    private TypeNode typeOfMember(Declaration member) {
+        if (member instanceof FieldDecl field) return field.type != null ? field.type : ANY;
+        if (member instanceof FunctionDecl func) return func.returnType != null ? func.returnType : ANY;
+        return ANY;
+    }
+
+    /**
      * Determines if a value of one type can be assigned to a variable of another type.
      * Considers "Any", "none" (nullability), and inheritance.
      *
@@ -145,6 +193,14 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         if (target.name.equals(value.name) || target.name.equals("object")) {
             return true;
         }
+
+        // Implicit numeric widening:
+        //   int   -> long, float, double
+        //   long  -> float, double
+        //   float -> double
+        if (value.name.equals("int")   && (target.name.equals("long") || target.name.equals("float") || target.name.equals("double"))) return true;
+        if (value.name.equals("long")  && (target.name.equals("float") || target.name.equals("double"))) return true;
+        if (value.name.equals("float") && target.name.equals("double")) return true;
 
         // Check inheritance
         Node valDecl = SymbolResolver.resolveTypeName(currentProgram, value.name, modules);
@@ -615,7 +671,6 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         TypeNode right = visitExpr(expr.right);
 
         if (expr.op == BinaryOperator.IN) {
-            // 'in' operator evaluates to a boolean
             return new TypeNode(expr.loc, "bool");
         }
 
@@ -630,56 +685,98 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitCallExpr(CallExpr expr) {
-        // Evaluate args
-        for (CallExpr.Argument arg : expr.arguments) {
-            visitExpr(arg.value);
-        }
-        // Simplified checking
-        return ANY;
-    }
-
-    /*
-    @Override
-    public TypeNode visitNewExpr(NewExpr expr) {
         List<TypeNode> argTypes = new ArrayList<>();
         for (CallExpr.Argument arg : expr.arguments) {
             argTypes.add(visitExpr(arg.value));
         }
 
-        // Try to find the class
-        Declaration decl = globals.get(expr.type.name);
-        if (decl instanceof ClassDecl cls) {
-            for (Declaration member : cls.members) {
-                if (member instanceof ConstructorDecl cons) {
-                    // Check params
-                    if (cons.params.size() == argTypes.size()) {
-                        for (int i = 0; i < cons.params.size(); i++) {
-                            TypeNode expectedType = cons.params.get(i).type;
-                            TypeNode actualType = argTypes.get(i);
-
-                            // Simple generic bypass for now: if expected is a single uppercase letter, assume it's a generic parameter
-                            boolean isGeneric = expectedType.name.length() == 1 && Character.isUpperCase(expectedType.name.charAt(0));
-
-                            if (!isGeneric && !isAssignable(expectedType, actualType)) {
-                                reportError(expr.arguments.get(i).value,
-                                        "Argument " + (i + 1) + " expects '" + expectedType + "', but got '"
-                                                + actualType + "'");
+        // --- メソッド呼び出し: object.method(...) または Class::method(...) ---
+        if (expr.callee instanceof AccessExpr access && access.object != null) {
+            TypeNode receiverType = visitExpr(access.object);
+            // ANY の場合は解決できないのでスキップ
+            if (!receiverType.name.equals("Any")) {
+                Declaration member = resolveMember(receiverType.name, access.member);
+                if (member instanceof FunctionDecl func) {
+                    if (func.params != null && func.params.size() != argTypes.size()) {
+                        reportError(expr, "Expected " + func.params.size() + " arguments, but found " + argTypes.size());
+                    }
+                    if (func.params != null) {
+                        for (int i = 0; i < Math.min(func.params.size(), argTypes.size()); i++) {
+                            if (!isAssignable(func.params.get(i).type, argTypes.get(i))) {
+                                reportError(argTypes.get(i), "Argument " + (i + 1) + ": expected '" + func.params.get(i).type + "', but found '" + argTypes.get(i) + "'");
                             }
                         }
                     }
+                    return func.returnType != null ? func.returnType : ANY;
                 }
             }
+            return ANY;
         }
-        return new TypeNode(expr.loc, expr.type.name);
+
+        // --- 単純な関数呼び出し: foo(...) ---
+        TypeNode calleeType = visitExpr(expr.callee);
+
+        // globals でクラスとして見つかった場合はコンストラクタ呼び出し → クラス型を返す
+        Declaration mayBeDecl = globals.get(calleeType.name);
+        if (mayBeDecl instanceof ClassDecl || mayBeDecl instanceof RecordDecl) {
+            return new TypeNode(expr.loc, calleeType.name);
+        }
+
+        if (mayBeDecl instanceof FunctionDecl fun) {
+            if (fun.params.size() != argTypes.size()) {
+                reportError(expr, "Expected " + fun.params.size() + " arguments, but found " + argTypes.size());
+            }
+            for (int i = 0; i < Math.min(fun.params.size(), argTypes.size()); i++) {
+                if (!isAssignable(fun.params.get(i).type, argTypes.get(i))) {
+                    reportError(argTypes.get(i), "Argument " + (i + 1) + ": expected '" + fun.params.get(i).type + "', but found '" + argTypes.get(i) + "'");
+                }
+            }
+            return fun.returnType != null ? fun.returnType : ANY;
+        }
+
+        // 解決できない場合は ANY を返す（過検出を避けるためエラーにしない）
+        return ANY;
     }
-    */
 
     @Override
     public TypeNode visitAccessExpr(AccessExpr expr) {
+        // 単純な変数参照: foo
         if (expr.object == null) {
+            // スコープから型を解決し、globals からより具体的な型を試みる
+            TypeNode scopeType = resolveVariable(expr.member);
+            if (!scopeType.name.equals("Any")) return scopeType;
+
+            // globals から宣言を探してクラス名を返す
+            Declaration decl = globals.get(expr.member);
+            if (decl instanceof ClassDecl cls) return new TypeNode(expr.loc, cls.name);
+            if (decl instanceof FunctionDecl func) return func.returnType != null ? func.returnType : ANY;
+            return scopeType;
+        }
+
+        // self.member
+        if (expr.object instanceof SelfExpr) {
             return resolveVariable(expr.member);
         }
-        return ANY; // Simplified
+
+        // object.member: まず object の型を解決してからメンバーを検索
+        TypeNode objectType = visitExpr(expr.object);
+        if (objectType.name.equals("Any")) return ANY;
+
+        // 配列アクセス後の型 (string[] → string)
+        String baseTypeName = objectType.name;
+
+        Declaration member = resolveMember(baseTypeName, expr.member);
+        if (member != null) return typeOfMember(member);
+
+        // globals から直接クラスとして解決できる場合（static アクセス: Io::println など）
+        Declaration classDecl = globals.get(baseTypeName);
+        if (classDecl instanceof ClassDecl cls && cls.members != null) {
+            for (Declaration m : cls.members) {
+                if (expr.member.equals(m.name)) return typeOfMember(m);
+            }
+        }
+
+        return ANY;
     }
 
     @Override
@@ -694,6 +791,18 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitIndexExpr(IndexExpr expr) {
+        // 配列のインデックスアクセス: arr[i] → 配列の要素型を返す
+        TypeNode objectType = visitExpr(expr.object);
+        visitExpr(expr.index);
+
+        // string[] → string のように配列サフィックスを除いた型を返す
+        if (objectType.suffixes != null && !objectType.suffixes.isEmpty()) {
+            TypeNode elementType = new TypeNode(expr.loc, objectType.name);
+            // サフィックスを1つ剥がす（最後の [] を除去）
+            List<TypeNode.TypeSuffix> remaining = objectType.suffixes.subList(0, objectType.suffixes.size() - 1);
+            elementType.suffixes.addAll(remaining);
+            return elementType;
+        }
         return ANY;
     }
 
@@ -709,6 +818,13 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitCastExpr(CastExpr expr) {
+        TypeNode value = visitExpr(expr.expr);
+        TypeNode clazz = expr.type;
+        boolean isValid = isAssignable(value, clazz);
+        if (!isValid) {
+
+        }
+
         return ANY;
     }
 

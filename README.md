@@ -1,2 +1,1 @@
-# aurora-lang
-
+# Aurora Programming Language

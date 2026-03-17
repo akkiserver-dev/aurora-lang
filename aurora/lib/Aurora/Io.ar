@@ -1,13 +1,13 @@
 namespace Aurora
 
-pub object Io {
-    local native fun __native_io_print(msg: object) -> void
-    local native fun __native_io_println(msg: object) -> void
-    local native fun __native_io_readLine() -> string?
+pub class Io {
+    local static native fun __native_io_print(msg: object) -> void
+    local static native fun __native_io_println(msg: object) -> void
+    local static native fun __native_io_readLine() -> string?
 
-    pub fun print(msg: object) -> void => __native_io_print(msg)
+    pub static fun print(msg: object) -> void => __native_io_print(msg)
 
-    pub fun println(msg: object) -> void => __native_io_println(msg)
+    pub static fun println(msg: object) -> void => __native_io_println(msg)
 
-    pub fun readLine() -> string? => __native_io_readLine()
+    pub static fun readLine() -> string? => __native_io_readLine()
 }

@@ -261,10 +261,10 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
         if (ctx.DOT() != null) {
             // Extension function: first typeType is receiver
             receiverType = (TypeNode) visit(ctx.typeType(0));
-            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(1)) : new TypeNode(loc(ctx), "Void");
+            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(1)) : new TypeNode(loc(ctx), "void");
         } else {
             // Normal function: first typeType (if any) is the return type
-            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(0)) : new TypeNode(loc(ctx), "Void");
+            retType = ctx.ARROW() != null ? (TypeNode) visit(ctx.typeType(0)) : new TypeNode(loc(ctx), "void");
         }
 
         List<GenericParameter> typeParams = getTypeParams(ctx.genericParameters());
@@ -538,7 +538,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
 
     @Override
     public Node visitBlockStmt(BlockStmtContext ctx) {
-        return visit(ctx.block());
+        return visitBlock(ctx.block());
     }
 
     // ----- Labeled Statement -----
@@ -568,7 +568,25 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
                     throw new IllegalStateException("'" + node.getClass().getSimpleName() + "' is not a statement");
                 })
                 .collect(Collectors.toList());
+        if (stmts.getLast() instanceof ExprStmt exprStmt) {
+            stmts.removeLast();
+            stmts.addLast(new ControlStmt.ReturnStmt(exprStmt.loc, exprStmt.expr));
+        }
         return new BlockStmt(loc(ctx), stmts);
+    }
+
+    @Override
+    public Node visitExprBlock(ExprBlockContext ctx) {
+        if (ctx.block() != null) {
+            return visitBlock(ctx.block());
+        } else {
+            List<Statement> stmts = new ArrayList<>();
+            stmts.add(new ControlStmt.ReturnStmt(
+                    loc(ctx),
+                    (Expr) visit(ctx.expression())
+            ));
+            return new BlockStmt(loc(ctx), stmts);
+        }
     }
 
     @Override
@@ -591,11 +609,11 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
     @Override
     public Node visitIfStmt(IfStmtContext ctx) {
         Expr cond = (Expr) visit(ctx.expression());
-        BlockStmt then = (BlockStmt) visit(ctx.block());
-        BlockStmt elseBlock = ctx.elseClause() != null ? (BlockStmt) visit(ctx.elseClause().block()) : null;
+        BlockStmt then = (BlockStmt) visit(ctx.exprBlock());
+        BlockStmt elseBlock = ctx.elseClause() != null ? (BlockStmt) visit(ctx.elseClause().exprBlock()) : null;
 
         List<IfStmt.ElseIf> elseIfs = ctx.elseifClause().stream()
-                .map(e -> new IfStmt.ElseIf(loc(e), (Expr) visit(e.expression()), (BlockStmt) visit(e.block())))
+                .map(e -> new IfStmt.ElseIf(loc(e), (Expr) visit(e.expression()), (BlockStmt) visit(e.exprBlock())))
                 .toList();
 
         return new IfStmt(loc(ctx), cond, then, elseIfs, elseBlock);
@@ -867,13 +885,13 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
     @Override
     public Node visitIfExpr(IfExprContext ctx) {
         Expr condition = (Expr) visit(ctx.expression());
-        BlockStmt thenBlock = (BlockStmt) visit(ctx.block());
+        BlockStmt thenBlock = (BlockStmt) visit(ctx.exprBlock());
 
         List<IfStmt.ElseIf> elseIfs = ctx.elseifClause().stream()
-                .map(e -> new IfStmt.ElseIf(loc(e), (Expr) visit(e.expression()), (BlockStmt) visit(e.block())))
+                .map(e -> new IfStmt.ElseIf(loc(e), (Expr) visit(e.expression()), (BlockStmt) visit(e.exprBlock())))
                 .toList();
 
-        BlockStmt elseBlock = ctx.elseClause() != null ? (BlockStmt) visit(ctx.elseClause().block()) : null;
+        BlockStmt elseBlock = ctx.elseClause() != null ? (BlockStmt) visit(ctx.elseClause().exprBlock()) : null;
 
         return new IfExpr(loc(ctx), condition, thenBlock, elseIfs, elseBlock);
     }

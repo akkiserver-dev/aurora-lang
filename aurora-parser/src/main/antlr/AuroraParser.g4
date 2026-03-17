@@ -187,7 +187,7 @@ threadDeclaration
 statement
     : (VAL | VAR) variableDeclaration (COMMA variableDeclaration)* SEMICOLON?  # LocalVarDecl
     | expression SEMICOLON?                                                           # ExprStmt
-    | IF expression block elseifClause* elseClause?                                   # IfStmt
+    | IF expression exprBlock elseifClause* elseClause?                                   # IfStmt
     | MATCH expression LBRACE matchCase+ RBRACE                                       # MatchStmt
     | FOR IDENTIFIER IN expression block                                              # ForInStmt
     | WHILE expression block                                                          # WhileStmt
@@ -202,12 +202,17 @@ statement
     | block                                                                           # BlockStmt
     ;
 
+exprBlock
+    : block
+    | expression
+    ;
+
 elseifClause
-    : ELSEIF expression block
+    : ELSEIF expression exprBlock
     ;
 
 elseClause
-    : ELSE block
+    : ELSE exprBlock
     ;
 
 matchCase
@@ -278,7 +283,7 @@ expression
     | expression AND expression                           # LogicalAnd
     | expression OR expression                            # LogicalOr
     | expression ELVIS expression                         # Elvis
-    | IF expression block elseifClause* elseClause?       # IfExpr
+    | IF expression exprBlock elseifClause* elseClause?       # IfExpr
     | MATCH expression LBRACE matchCase+ RBRACE           # MatchExpr
     | <assoc=right> expression assignmentOperator expression  # Assignment
     ;
