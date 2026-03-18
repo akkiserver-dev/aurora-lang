@@ -1,5 +1,6 @@
 package aurora.parser.tree.type;
 
+import aurora.parser.SourceLocation;
 import aurora.parser.tree.TypeNode;
 
 import java.util.Collections;
@@ -12,6 +13,8 @@ import java.util.stream.Collectors;
  * and an optional default type.
  */
 public class GenericParameter {
+    public final SourceLocation loc;
+
     /** The name of the type parameter (e.g., "T"). */
     public final String name;
 
@@ -24,15 +27,16 @@ public class GenericParameter {
     /** The default type to use if the parameter is not explicitly provided. May be null. */
     public final TypeNode defaultType;
 
-    public GenericParameter(String name, Variance variance, List<TypeNode> constraints, TypeNode defaultType) {
+    public GenericParameter(SourceLocation loc, String name, Variance variance, List<TypeNode> constraints, TypeNode defaultType) {
+        this.loc = loc;
         this.name = name;
         this.variance = variance != null ? variance : Variance.NONE;
         this.constraints = constraints != null ? constraints : Collections.emptyList();
         this.defaultType = defaultType;
     }
 
-    public GenericParameter(String name) {
-        this(name, Variance.NONE, Collections.emptyList(), null);
+    public GenericParameter(SourceLocation loc, String name) {
+        this(loc, name, Variance.NONE, Collections.emptyList(), null);
     }
 
     @Override

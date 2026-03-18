@@ -15,10 +15,6 @@ public final class AuroraAnalyzer {
     private static final String SOURCE_TYPECHECKER = "Aurora TypeChecker";
     private static final String SOURCE_INTERNAL    = "Aurora Analyzer";
 
-    public AnalysisResult analyze(String source, String sourceName) {
-        return analyze(source, sourceName, null);
-    }
-
     public AnalysisResult analyze(String source, String sourceName, ModuleResolver modules) {
         List<AuroraDiagnostic> diagnostics = new ArrayList<>();
         DiagnosticCollector collector = new DiagnosticCollector(diagnostics, sourceName);
@@ -26,7 +22,7 @@ public final class AuroraAnalyzer {
         Program program;
 
         try {
-            program = AuroraParser.parseWithListener(source, sourceName, collector);
+            program = AuroraParser.parseWithListener(source, sourceName, collector, modules);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             diagnostics.add(AuroraDiagnostic.error(null, "Internal parse error: " + msg, SOURCE_INTERNAL));

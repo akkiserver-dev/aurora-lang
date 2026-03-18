@@ -1,5 +1,6 @@
 package aurora.tooling;
 
+import aurora.analyzer.ModuleResolver;
 import aurora.compiler.CompiledClass;
 import aurora.compiler.CompiledFunction;
 import aurora.compiler.Compiler;
@@ -12,6 +13,7 @@ import picocli.CommandLine;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 
 /**
@@ -36,10 +38,13 @@ public class AuroraBytecode implements Callable<Integer> {
                 return 1;
             }
 
-            String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
-            Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
+            ModuleResolver modules = new ModuleResolver();
+            modules.setProjectRoot(Paths.get("."));
 
-            Compiler compiler = new Compiler();
+            String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
+            Program program = AuroraParser.parse(code, sourceFile.getFileName().toString(), modules);
+
+            Compiler compiler = new Compiler(modules);
             Chunk chunk = compiler.compile(program);
 
             System.out.println("=== Aurora Bytecode: " + sourceFile.getFileName() + " ===");

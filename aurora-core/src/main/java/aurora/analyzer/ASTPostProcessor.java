@@ -63,15 +63,6 @@ public final class ASTPostProcessor {
     // -----------------------------------------------------------------------
 
     /**
-     * Runs both post-processing phases on {@code program}.
-     *
-     * @param program the freshly parsed AST root
-     */
-    public static void process(Program program) {
-        process(program, null);
-    }
-
-    /**
      * Runs both post-processing phases on {@code program} using the supplied
      * {@link ModuleResolver} for cross-module type lookups.
      *
@@ -80,8 +71,6 @@ public final class ASTPostProcessor {
      */
     public static void process(Program program, ModuleResolver modules) {
         if (program == null) return;
-
-        if (modules == null) modules = new ModuleResolver();
 
         // Phase 1: annotate every BlockStmt.returnType via full-AST type inference
         TypeInferenceEngine engine = new TypeInferenceEngine(program, modules);

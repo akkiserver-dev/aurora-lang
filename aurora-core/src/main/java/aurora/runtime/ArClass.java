@@ -1,6 +1,8 @@
 package aurora.runtime;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,6 +22,8 @@ public class ArClass extends ArObject {
 
     /** A map of method names to their respective function definitions. */
     public final Map<String, ArObject> methods = new HashMap<>();
+
+    public final List<ArClass> interfaces = new ArrayList<>();
 
     /**
      * Constructs a new class definition.
@@ -52,6 +56,14 @@ public class ArClass extends ArObject {
             return superClass.findInitializer();
         }
         return null;
+    }
+
+    public boolean implementsTrait(ArClass trait) {
+        for (ArClass iface : interfaces) {
+            if (iface == trait || iface.implementsTrait(trait)) return true;
+        }
+        if (superClass != null) return superClass.implementsTrait(trait);
+        return false;
     }
 
     @Override

@@ -102,7 +102,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
         String uri = params.getTextDocument().getUri();
         AuroraLanguageServer.LOGGER.info("didChange: " + uri);
         hoverCache.keySet().removeIf(k -> k.startsWith(uri + ":"));
-        validateDocument(uri, params.getContentChanges().get(0).getText());
+        validateDocument(uri, params.getContentChanges().getFirst().getText());
     }
 
     @Override
@@ -131,7 +131,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
 
         NodeFinder finder = new NodeFinder(line, charPos);
         List<Node> path = finder.findPath(program);
-        Node node = (path != null && !path.isEmpty()) ? path.get(path.size() - 1) : null;
+        Node node = (path != null && !path.isEmpty()) ? path.getLast() : null;
 
         Node decl = SymbolResolver.resolve(node, path);
 
@@ -239,7 +239,7 @@ public class AuroraTextDocumentService implements TextDocumentService {
             return CompletableFuture.completedFuture(cached == EMPTY_HOVER ? null : cached);
         }
 
-        AuroraLanguageServer.LOGGER.info("hover request: uri=%s line=%d char=%d  astMap.contains=%b",
+        AuroraLanguageServer.LOGGER.info("hover request: uri={} line={} char={}  astMap.contains={}",
                 uri, line, charPos, program != null);
 
         if (program == null) {
@@ -251,13 +251,13 @@ public class AuroraTextDocumentService implements TextDocumentService {
         List<Node> path = finder.findPath(program);
         Node node = (path != null && !path.isEmpty()) ? path.get(path.size() - 1) : null;
 
-        AuroraLanguageServer.LOGGER.info("  NodeFinder result: pathSize=%d  node=%s",
+        AuroraLanguageServer.LOGGER.info("  NodeFinder result: pathSize={}  node={}",
                 path != null ? path.size() : -1,
                 node != null ? node.getClass().getSimpleName() + " @ " + node.loc : "null");
 
         Node decl = SymbolResolver.resolve(node, path, program, moduleResolver);
 
-        AuroraLanguageServer.LOGGER.info("  SymbolResolver result: %s",
+        AuroraLanguageServer.LOGGER.info("  SymbolResolver result: {}",
                 decl != null ? decl.getClass().getSimpleName() : "null");
 
         if (decl != null) {
@@ -381,15 +381,15 @@ public class AuroraTextDocumentService implements TextDocumentService {
      * then publishes diagnostics to the client.
      */
     private void validateDocument(String uri, String text) {
-        AuroraLanguageServer.LOGGER.info("validateDocument: %s  textLen=%d", uri, text.length());
+        AuroraLanguageServer.LOGGER.info("validateDocument: {}  textLen={}", uri, text.length());
 
-        AnalysisResult result = new AuroraAnalyzer().analyze(text, uri);
+        AnalysisResult result = new AuroraAnalyzer().analyze(text, uri, moduleResolver);
 
         if (result.program() != null) {
             astMap.put(uri, result.program());
         }
 
-        AuroraLanguageServer.LOGGER.info("  analysis done: %d diagnostics", result.diagnostics().size());
+        AuroraLanguageServer.LOGGER.info("  analysis done: {} diagnostics", result.diagnostics().size());
 
         List<Diagnostic> lspDiags = result.diagnostics().stream()
                 .map(AuroraTextDocumentService::toLspDiagnostic)

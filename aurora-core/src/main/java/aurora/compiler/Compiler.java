@@ -64,7 +64,7 @@ public class Compiler implements NodeVisitor<Void> {
     /** The name of the file currently being compiled. */
     private String currentFileName;
 
-    private ModuleResolver modules;
+    private final ModuleResolver modules;
 
     /**
      * Context information for loops, used to support {@code break} and {@code continue} statements.
@@ -89,11 +89,10 @@ public class Compiler implements NodeVisitor<Void> {
     /**
      * Initializes a new Compiler with default library search paths.
      */
-    public Compiler() {
+    public Compiler(ModuleResolver modules) {
         this.libraryPaths.add(Paths.get("aurora/lib"));
         this.libraryPaths.add(Paths.get("."));
-        this.modules = new ModuleResolver();
-        this.modules.setProjectRoot(Paths.get("."));
+        this.modules = modules;
     }
 
     /**
@@ -1056,7 +1055,7 @@ public class Compiler implements NodeVisitor<Void> {
     private void loadLibraryFile(Path file, String libPath) {
         try {
             String code = Files.readString(file);
-            Program libProgram = aurora.parser.AuroraParser.parse(code, file.getFileName().toString());
+            Program libProgram = aurora.parser.AuroraParser.parse(code, file.getFileName().toString(), modules);
             visitProgram(libProgram);
         } catch (aurora.parser.SyntaxErrorException e) {
             throw e; // Let native syntax errors bubble up directly
@@ -1739,6 +1738,10 @@ public class Compiler implements NodeVisitor<Void> {
             cls.superClassName = fqn(decl.superClass.name);
         }
 
+        for (TypeNode iface : decl.interfaces) {
+            cls.interfaceNames.add(fqn(iface.name));
+        }
+
         // Save context
         String oldNamespace = this.currentNamespace;
         this.currentNamespace = fullName; // Methods are inside class namespace
@@ -1893,9 +1896,27 @@ public class Compiler implements NodeVisitor<Void> {
 
     @Override
     public Void visitInterfaceDecl(InterfaceDecl decl) {
+        String fullName = fqn(decl.name);
+        CompiledClass cls = new CompiledClass(fullName);
+        cls.isTrait = true; // CompiledClass にフラグ追加
+
+        for (Declaration member : decl.members) {
+            if (member instanceof FunctionDecl func) {
+                CompiledFunction cf = compileFunction(func, true);
+                cls.methods.put(func.name, cf);
+            }
+        }
+
+        int nameIndex = chunk.addConstant(fullName);
+        int clsIndex = chunk.addConstant(cls);
+        chunk.write(OpCode.LOAD_CONST.ordinal(), decl.loc.line(), decl.loc.column());
+        chunk.write(clsIndex, decl.loc.line(), decl.loc.column());
+        chunk.write(OpCode.SET_GLOBAL.ordinal(), decl.loc.line(), decl.loc.column());
+        chunk.write(nameIndex, decl.loc.line(), decl.loc.column());
+        chunk.write(OpCode.POP.ordinal(), decl.loc.line(), decl.loc.column());
+
         return null;
     }
-
     @Override
     public Void visitLambdaExpr(LambdaExpr expr) {
         Chunk parentChunk = this.chunk;

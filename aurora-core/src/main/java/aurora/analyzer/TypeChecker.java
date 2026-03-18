@@ -494,10 +494,34 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
     @Override
     public TypeNode visitForStmt(LoopStmt.ForStmt stmt) {
         beginScope();
-        declareVariable(stmt.varName, ANY);
+        TypeNode elemType = inferIterableElementType(stmt.iterable);
+        declareVariable(stmt.varName, elemType);
         visitExpr(stmt.iterable);
         visitBlockStmt(stmt.body);
         endScope();
+        return ANY;
+    }
+
+    private TypeNode inferIterableElementType(Expr expr) {
+        if (expr instanceof RangeExpr r) {
+            return new TypeNode(r.loc, "int");
+        }
+
+        TypeNode t = visitExpr(expr);
+        if (t == null || t == ANY) return ANY;
+
+        if (t.suffixes != null && !t.suffixes.isEmpty()) {
+            List<TypeNode.TypeSuffix> rest = t.suffixes.subList(0, t.suffixes.size() - 1);
+            return new TypeNode(t.loc, t.name, t.typeArguments, rest);
+        }
+
+        Node typeDecl = SymbolResolver.resolveTypeName(currentProgram, t.name, modules);
+        if (typeDecl instanceof ClassDecl || typeDecl instanceof InterfaceDecl) {
+            if (t.typeArguments != null && !t.typeArguments.isEmpty()) {
+                return t.typeArguments.getFirst();
+            }
+        }
+
         return ANY;
     }
 
@@ -722,23 +746,65 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitRecordDecl(RecordDecl decl) {
+        beginScope();
+        if (decl.members != null) {
+            for (Declaration member : decl.members) {
+                if (member instanceof FieldDecl field) {
+                    declareVariable(field.name, field.type != null ? field.type : ANY);
+                    if (field.init != null) {
+                        TypeNode initType = visitExpr(field.init);
+                        if (field.type != null && !isAssignable(field.type, initType)) {
+                            reportError(field, "Cannot assign type '" + initType + "' to '" + field.type + "'");
+                        }
+                    }
+                } else if (member instanceof FunctionDecl func) {
+                    visitFunctionDecl(func);
+                } else if (member instanceof MethodSignature sig) {
+                    visitMethodSignature(sig);
+                }
+            }
+        }
+        endScope();
         return ANY;
     }
 
     @Override
     public TypeNode visitParamDecl(ParamDecl decl) {
-        reportWarn(decl, "Unable to inference");
-        return ANY;
+        TypeNode paramType = decl.type != null ? decl.type : ANY;
+        if (decl.defaultValue != null) {
+            TypeNode defaultType = visitExpr(decl.defaultValue);
+            if (paramType != ANY && !isAssignable(paramType, defaultType)) {
+                reportError(decl.defaultValue,
+                        "Default value of type '" + defaultType + "' is not assignable to '" + paramType + "'");
+            }
+        }
+        declareVariable(decl.name, paramType);
+        return paramType;
     }
 
     @Override
     public TypeNode visitMethodSignature(MethodSignature sig) {
-        return ANY;
+        beginScope();
+        if (sig.params != null) {
+            for (ParamDecl p : sig.params)
+                declareVariable(p.name, p.type != null ? p.type : ANY);
+        }
+        endScope();
+        return sig.returnType != null ? sig.returnType : ANY;
     }
 
     @Override
     public TypeNode visitInterfaceDecl(InterfaceDecl decl) {
-        reportWarn(decl, "Unable to inference");
+        beginScope();
+        if (decl.members != null) {
+            for (Declaration member : decl.members) {
+                if (member instanceof MethodSignature sig)
+                    visitMethodSignature(sig);
+                else if (member instanceof FunctionDecl func)
+                    visitFunctionDecl(func);
+            }
+        }
+        endScope();
         return ANY;
     }
 

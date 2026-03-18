@@ -33,7 +33,7 @@ pub class Ok<T, E> : Result<T, E> {
         self.value = value
     }
 
-    pub override fun toString() -> string {
+    pub override fun str() -> string {
         return "Ok(" + self.value + ")"
     }
 }
@@ -45,7 +45,7 @@ pub class Err<T, E> : Result<T, E> {
         self.error = error
     }
 
-    pub override fun toString() -> string {
+    pub override fun str() -> string {
         return "Err(" + self.error + ")"
     }
 }

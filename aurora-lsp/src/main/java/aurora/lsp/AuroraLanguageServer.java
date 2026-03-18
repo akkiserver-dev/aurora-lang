@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class AuroraLanguageServer implements LanguageServer, LanguageClientAware {
     public static final Logger LOGGER = LoggerFactory.getLogger(AuroraLanguageServer.class);
+    public static final String VERSION = "0.1.0-alpha";
 
     /** The client proxy used to send diagnostics and other messages back to the IDE. */
     private LanguageClient client;

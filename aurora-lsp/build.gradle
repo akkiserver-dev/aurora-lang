@@ -1,3 +1,8 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
 dependencies {
     implementation project(":aurora-core")
 
@@ -5,5 +10,16 @@ dependencies {
     implementation "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.21.0"
     implementation "org.antlr:antlr4-runtime:4.13.2"
     implementation 'org.slf4j:slf4j-api:2.0.13'
-    implementation 'ch.qos.logback:logback-classic:1.5.21'
+    implementation 'ch.qos.logback:logback-classic:1.5.32'
 }
+
+shadowJar {
+    archiveBaseName.set('aurora-lsp')
+    archiveClassifier.set('')
+    archiveVersion.set('')
+    manifest {
+        attributes('Main-Class': 'aurora.Main')
+    }
+}
+
+tasks.jar.dependsOn(shadowJar)

@@ -1,5 +1,6 @@
 package aurora.runtime;
 
+import aurora.analyzer.ModuleResolver;
 import aurora.compiler.CompiledClass;
 import aurora.compiler.CompiledFunction;
 import aurora.compiler.Compiler;
@@ -20,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 /**
  * The core Virtual Machine for the Aurora language.
@@ -60,6 +62,8 @@ public class VM {
         /** A set of identifiers for modules that have already been loaded. */
         public final Set<String> loadedModules = ConcurrentHashMap.newKeySet();
 
+        public final ModuleResolver moduleResolver = new ModuleResolver();
+
         /**
          * Initializes a new shared state with default library paths.
          */
@@ -67,6 +71,7 @@ public class VM {
             // Default library paths
             libraryPaths.add(Paths.get("aurora/lib"));
             libraryPaths.add(Paths.get("."));
+            moduleResolver.setProjectRoot(Paths.get("."));
         }
 
         /**
@@ -178,65 +183,87 @@ public class VM {
     }
 
     private ArObject inflate(Object raw) {
-        if (raw == null)
-            return ArNone.INSTANCE;
-        if (raw instanceof ArObject)
-            return (ArObject) raw;
-        if (raw instanceof Boolean)
-            return (Boolean) raw ? ArBool.TRUE : ArBool.FALSE;
-        if (raw instanceof Integer)
-            return new ArInt((Integer) raw);
-        if (raw instanceof Long)
-            return new ArLong((Long) raw);
-        if (raw instanceof Float)
-            return new ArFloat((Float) raw);
-        if (raw instanceof Double)
-            return new ArDouble((Double) raw);
-        if (raw instanceof String)
-            return new ArString((String) raw);
-        if (raw instanceof CompiledFunction cf) {
-            return new ArFunction(cf.name(), inflateChunk(cf.chunk()), cf.arity());
-        }
-        if (raw instanceof CompiledClass cc) {
-            ArClass klass = new ArClass(cc.name);
-            if (cc.superClassName != null) {
-                ArObject superObj = shared.globals.get(cc.superClassName);
-                if (superObj == null) {
-                    // Try simple name search
-                    for (var entry : shared.globals.entrySet()) {
-                        if (entry.getValue() instanceof ArClass && (entry.getKey().endsWith("." + cc.superClassName)
-                                || entry.getKey().equals(cc.superClassName))) {
-                            superObj = entry.getValue();
-                            break;
+        switch (raw) {
+            case null -> {
+                return ArNone.INSTANCE;
+            }
+            case ArObject arObject -> {
+                return arObject;
+            }
+            case Boolean b -> {
+                return b ? ArBool.TRUE : ArBool.FALSE;
+            }
+            case Integer i -> {
+                return new ArInt(i);
+            }
+            case Long l -> {
+                return new ArLong(l);
+            }
+            case Float v -> {
+                return new ArFloat(v);
+            }
+            case Double v -> {
+                return new ArDouble(v);
+            }
+            case String s -> {
+                return new ArString(s);
+            }
+            case CompiledFunction cf -> {
+                return new ArFunction(cf.name(), inflateChunk(cf.chunk()), cf.arity());
+            }
+            case CompiledClass cc -> {
+                ArClass klass = new ArClass(cc.name);
+                if (cc.superClassName != null) {
+                    ArObject superObj = shared.globals.get(cc.superClassName);
+                    if (superObj == null) {
+                        // Try simple name search
+                        for (var entry : shared.globals.entrySet()) {
+                            if (entry.getValue() instanceof ArClass && (entry.getKey().endsWith("." + cc.superClassName)
+                                    || entry.getKey().equals(cc.superClassName))) {
+                                superObj = entry.getValue();
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (superObj instanceof ArClass) {
-                    klass.superClass = (ArClass) superObj;
-                } else {
+                    for (String ifaceName : cc.interfaceNames) {
+                        ArObject ifaceObj = shared.globals.get(ifaceName);
+                        if (ifaceObj instanceof ArClass ifaceClass) {
+                            klass.interfaces.add(ifaceClass);
+                            ifaceClass.methods.forEach(klass.methods::putIfAbsent);
+                        }
+                    }
+
+                    if (superObj instanceof ArClass) {
+                        klass.superClass = (ArClass) superObj;
+                    } else {
+                        klass.superClass = OBJECT_CLASS;
+                    }
+                } else if (!cc.name.equals("object")) {
                     klass.superClass = OBJECT_CLASS;
                 }
-            } else if (!cc.name.equals("object")) {
-                klass.superClass = OBJECT_CLASS;
-            }
 
-            // Register class BEFORE inflating members to support recursive types or method
-            // owner linkage
-            shared.globals.put(cc.name, klass);
+                // Register class BEFORE inflating members to support recursive types or method
+                // owner linkage
+                shared.globals.put(cc.name, klass);
 
-            if (cc.initializer != null) {
-                klass.initializer = (ArFunction) inflate(cc.initializer);
-                klass.initializer.ownerClass = klass;
+                if (cc.initializer != null) {
+                    klass.initializer = (ArFunction) inflate(cc.initializer);
+                    klass.initializer.ownerClass = klass;
+                }
+                for (var entry : cc.methods.entrySet()) {
+                    ArFunction method = (ArFunction) inflate(entry.getValue());
+                    method.ownerClass = klass;
+                    klass.methods.put(entry.getKey(), method);
+                }
+                // System.out.println("[DEBUG] Inflated class " + klass.name + " with " +
+                // klass.methods.size() + " methods");
+                return klass;
+                // System.out.println("[DEBUG] Inflated class " + klass.name + " with " +
+                // klass.methods.size() + " methods");
             }
-            for (var entry : cc.methods.entrySet()) {
-                ArFunction method = (ArFunction) inflate(entry.getValue());
-                method.ownerClass = klass;
-                klass.methods.put(entry.getKey(), method);
+            default -> {
             }
-            // System.out.println("[DEBUG] Inflated class " + klass.name + " with " +
-            // klass.methods.size() + " methods");
-            return klass;
         }
         throw new AuroraRuntimeException("Cannot inflate raw constant: " + raw.getClass());
     }
@@ -251,6 +278,9 @@ public class VM {
     private static final ArClass NONE_CLASS = new ArClass("none");
     private static final ArClass ARRAY_CLASS = new ArClass("array");
     private static final ArClass FUTURE_CLASS = new ArClass("future");
+    private static final ArClass ITERABLE_TRAIT = new ArClass("Iterable");
+    private static final ArClass THROWABLE_TRAIT = new ArClass("Throwable");
+    private static final ArClass COMPARABLE_TRAIT = new ArClass("Comparable");
 
     private boolean isInstanceOf(ArObject value, ArObject type) {
         if (type == OBJECT_CLASS)
@@ -276,11 +306,11 @@ public class VM {
             if (targetKlass == FUTURE_CLASS)
                 return value instanceof ArFuture;
 
-            if (value instanceof ArInstance) {
-                ArClass currentKlass = ((ArInstance) value).klass;
+            if (value instanceof ArInstance inst) {
+                ArClass currentKlass = inst.klass;
                 while (currentKlass != null) {
-                    if (currentKlass == targetKlass)
-                        return true;
+                    if (currentKlass == targetKlass) return true;
+                    if (currentKlass.implementsTrait(targetKlass)) return true;
                     currentKlass = currentKlass.superClass;
                 }
             }
@@ -307,6 +337,9 @@ public class VM {
         shared.globals.put("none", NONE_CLASS);
         shared.globals.put("array", ARRAY_CLASS);
         shared.globals.put("future", FUTURE_CLASS);
+        shared.globals.put("Iterable", ITERABLE_TRAIT);
+        shared.globals.put("Throwable", THROWABLE_TRAIT);
+        shared.globals.put("Comparable", COMPARABLE_TRAIT);
 
         // All classes inherit from object
         INT_CLASS.superClass = OBJECT_CLASS;
@@ -317,6 +350,8 @@ public class VM {
         BOOL_CLASS.superClass = OBJECT_CLASS;
         ARRAY_CLASS.superClass = OBJECT_CLASS;
         FUTURE_CLASS.superClass = OBJECT_CLASS;
+
+        ARRAY_CLASS.interfaces.add(ITERABLE_TRAIT);
 
         // Add built-in methods to string
         ArNativeFunction stringLength = new ArNativeFunction("length", 1) {
@@ -353,6 +388,32 @@ public class VM {
 
         registerModule(new IoModule());
         registerModule(new ConcurrentModule());
+
+        loadRuntimeModules();
+    }
+
+    private void loadRuntimeModules() {
+        for (Path root : shared.libraryPaths) {
+            Path runtimeRoot = root.resolve("Aurora/Runtime");
+            if (!Files.exists(runtimeRoot)) continue;
+
+            try (Stream<Path> fs = Files.walk(runtimeRoot)) {
+                fs.filter(p -> p.toString().endsWith(".ar") || p.toString().endsWith(".arobj"))
+                        .forEach(file -> {
+                            Path rel = root.relativize(file);
+                            String fqn = rel.toString()
+                                    .replace(java.io.File.separatorChar, '.')
+                                    .replaceAll("\\.(ar|arobj)$", "");
+                            try {
+                                loadModule(fqn);
+                            } catch (AuroraRuntimeException e) {
+                                e.printStackTrace(System.err);
+                            }
+                        });
+            } catch (IOException ignored) {}
+
+            break;
+        }
     }
 
     public String arToString(ArObject obj) {
@@ -944,6 +1005,17 @@ public class VM {
         throw new AuroraRuntimeException(exception);
     }
 
+    private void executeModuleChunk(Chunk moduleChunk) {
+        Stack<Frame> savedFrames = new Stack<>();
+        savedFrames.addAll(frames);
+        frames.clear();
+
+        frames.push(new Frame(moduleChunk, new ArFunction("<module>", moduleChunk, 0), null));
+        runLoop();
+
+        frames.addAll(savedFrames);
+    }
+
     /**
      * Dynamically loads a module by name.
      * Search order:
@@ -1000,8 +1072,7 @@ public class VM {
             dis.readInt(); // version
 
             Chunk moduleChunk = loadChunk(dis);
-            // Execute the module chunk to register its globals
-            frames.push(new Frame(moduleChunk, new ArFunction("<module>", moduleChunk, 0), null));
+            executeModuleChunk(moduleChunk);
         } catch (IOException e) {
             throw new AuroraRuntimeException("Failed to load module: " + path + " — " + e.getMessage());
         }
@@ -1010,14 +1081,13 @@ public class VM {
     private void compileAndLoad(Path path) {
         try {
             String code = Files.readString(path, StandardCharsets.UTF_8);
-            Program program = AuroraParser.parse(code, path.getFileName().toString());
+            Program program = AuroraParser.parse(code, path.getFileName().toString(), shared.moduleResolver);
 
-            Compiler compiler = new Compiler();
+            Compiler compiler = new Compiler(shared.moduleResolver);
             Chunk rawChunk = compiler.compile(program);
             Chunk moduleChunk = inflateChunk(rawChunk);
 
-            // Execute the module chunk to register its globals
-            frames.push(new Frame(moduleChunk, new ArFunction("<module>", moduleChunk, 0), null));
+            executeModuleChunk(moduleChunk);
         } catch (Exception e) {
             throw new AuroraRuntimeException("Failed to compile and load module: " + path + " — " + e.getMessage());
         }

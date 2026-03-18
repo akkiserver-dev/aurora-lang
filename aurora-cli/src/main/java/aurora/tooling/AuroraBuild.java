@@ -1,6 +1,7 @@
 package aurora.tooling;
 
 import aurora.Main;
+import aurora.analyzer.ModuleResolver;
 import aurora.compiler.Compiler;
 import aurora.parser.AuroraParser;
 import aurora.parser.tree.Program;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -80,9 +82,12 @@ public class AuroraBuild implements Callable<Integer> {
 
         try {
             String code = Files.readString(mainFile, StandardCharsets.UTF_8);
-            Program program = AuroraParser.parse(code, mainFile.getFileName().toString());
+            ModuleResolver modules = new ModuleResolver();
+            modules.setProjectRoot(Paths.get("."));
 
-            Compiler compiler = new Compiler();
+            Program program = AuroraParser.parse(code, mainFile.getFileName().toString(), modules);
+
+            Compiler compiler = new Compiler(modules);
             // TODO: Add project libraries to compiler
             // compiler.addLibraryPath(root.resolve("lib"));
 

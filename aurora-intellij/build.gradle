@@ -5,17 +5,18 @@ plugins {
 
 repositories {
     mavenCentral()
-
     intellijPlatform {
         defaultRepositories()
     }
 }
 
 dependencies {
-    implementation project(":aurora-core")
+    implementation project(":aurora-cli")
+    implementation "org.antlr:antlr4-runtime:4.13.2"
 
     intellijPlatform {
         intellijIdeaCommunity("2024.3.7")
+        plugin("com.redhat.devtools.lsp4ij:0.7.0")
     }
 }
 
@@ -23,4 +24,17 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
+}
+
+tasks.named('prepareSandbox') {
+    dependsOn ':aurora-cli:shadowJar'
+
+    from(project(':aurora-cli').tasks.named('shadowJar')) {
+        into "${project.name}/lib"
+        rename { 'aurora-lsp.jar' }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn(':aurora-cli:shadowJar')
 }

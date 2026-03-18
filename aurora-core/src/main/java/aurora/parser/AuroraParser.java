@@ -16,10 +16,7 @@ import aurora.parser.tree.util.BinaryOperator;
 import aurora.parser.tree.util.FunctionModifier;
 import aurora.parser.tree.util.UnaryOperator;
 import aurora.parser.tree.util.Visibility;
-import org.antlr.v4.runtime.CharStreams;
-import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.ArrayList;
@@ -67,7 +64,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
      * @return A parsed Program AST.
      * @throws SyntaxErrorException If syntax errors are detected.
      */
-    public static Program parse(String code, String sourceName) {
+    public static Program parse(String code, String sourceName, ModuleResolver modules) {
         CompilerErrorListener errorListener = new CompilerErrorListener(sourceName, code);
 
         AuroraLexer lexer = new AuroraLexer(CharStreams.fromString(code));
@@ -88,7 +85,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
 
         AuroraParser visitor = new AuroraParser(sourceName, tokens);
         Program program = (Program) visitor.visitCompilationUnit(tree);
-        ASTPostProcessor.process(program);
+        ASTPostProcessor.process(program, modules);
         return program;
     }
 
@@ -97,8 +94,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
      * printing them.
      * Removes the default console error listener so stderr is not polluted.
      */
-    public static Program parseWithListener(String code, String sourceName,
-                                            org.antlr.v4.runtime.ANTLRErrorListener errorListener) {
+    public static Program parseWithListener(String code, String sourceName, ANTLRErrorListener errorListener, ModuleResolver modules) {
         AuroraLexer lexer = new AuroraLexer(CharStreams.fromString(code));
         lexer.removeErrorListeners();
         lexer.addErrorListener(errorListener);
@@ -111,12 +107,8 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
         CompilationUnitContext tree = parser.compilationUnit();
         AuroraParser visitor = new AuroraParser(sourceName, tokens);
         Program program = (Program) visitor.visitCompilationUnit(tree);
-        ASTPostProcessor.process(program);
+        ASTPostProcessor.process(program, modules);
         return program;
-    }
-
-    public static Program parse(String code) {
-        return parse(code, "<unknown>");
     }
 
     @Override
@@ -1329,7 +1321,7 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
             }
             List<TypeNode> constraints = p.typeTypeList() != null ? getTypeList(p.typeTypeList()) : Collections.emptyList();
             TypeNode defaultType = p.typeType() != null ? (TypeNode) visit(p.typeType()) : null;
-            return new GenericParameter(name, variance, constraints, defaultType);
+            return new GenericParameter(loc(p.IDENTIFIER()), name, variance, constraints, defaultType);
         }).collect(Collectors.toList());
     }
 

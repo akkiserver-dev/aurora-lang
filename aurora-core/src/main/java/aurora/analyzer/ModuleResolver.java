@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
@@ -40,7 +41,7 @@ import java.util.stream.Stream;
  */
 public class ModuleResolver {
     /** Cache mapping import paths (e.g., "Aurora.Io") to their parsed {@link Program} ASTs. */
-    private final Map<String, Program> moduleCache = new ConcurrentHashMap<>();
+    private final Map<String, Optional<Program>> moduleCache = new ConcurrentHashMap<>();
 
     /** The project root directory, used to resolve relative imports. */
     volatile Path projectRoot;
@@ -157,22 +158,33 @@ public class ModuleResolver {
      * Returns null if the file doesn't exist or fails to parse.
      */
     public Program loadModule(String importPath) {
-        return moduleCache.computeIfAbsent(importPath, path -> {
-            Path file = resolveFile(path);
-            if (file == null || !Files.exists(file)) {
-                System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG, () -> String.format("  ModuleResolver: cannot find file for import '%s'", path));
-                return null;
-            }
-            try {
-                String src = Files.readString(file);
-                System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG, () -> String.format("  ModuleResolver: loading '%s' from %s", path, file));
-                org.antlr.v4.runtime.BaseErrorListener errs = new org.antlr.v4.runtime.BaseErrorListener();
-                return AuroraParser.parseWithListener(src, file.toUri().toString(), errs);
-            } catch (Exception e) {
-                System.getLogger("aurora.analyzer").log(System.Logger.Level.WARNING, "  ModuleResolver: failed to load " + path, e);
-                return null;
-            }
-        });
+        if (moduleCache.containsKey(importPath)) {
+            return moduleCache.get(importPath).orElse(null);
+        }
+
+        // Sentinel: mark as "in progress" to break recursive load cycles
+        moduleCache.put(importPath, Optional.empty());
+
+        Path file = resolveFile(importPath);
+        if (file == null || !Files.exists(file)) {
+            System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG,
+                    () -> String.format("  ModuleResolver: cannot find file for import '%s'", importPath));
+            return null;
+        }
+
+        try {
+            String src = Files.readString(file);
+            System.getLogger("aurora.analyzer").log(System.Logger.Level.DEBUG,
+                    () -> String.format("  ModuleResolver: loading '%s' from %s", importPath, file));
+            org.antlr.v4.runtime.BaseErrorListener errs = new org.antlr.v4.runtime.BaseErrorListener();
+            Program program = AuroraParser.parseWithListener(src, file.toUri().toString(), errs, this);
+            moduleCache.put(importPath, Optional.of(program));
+            return program;
+        } catch (Exception e) {
+            System.getLogger("aurora.analyzer").log(System.Logger.Level.WARNING,
+                    "  ModuleResolver: failed to load " + importPath, e);
+            return null;
+        }
     }
 
     /**

@@ -69,6 +69,9 @@ public class AuroraSyntaxHighlighter extends SyntaxHighlighterBase {
     public static final TextAttributesKey BAD_CHAR =
             createTextAttributesKey("AURORA_BAD_CHAR",    HighlighterColors.BAD_CHARACTER);
 
+    public static final TextAttributesKey GENERIC_PARAM =
+            createTextAttributesKey("AURORA_GENERIC_PARAM", DefaultLanguageHighlighterColors.CLASS_REFERENCE);
+
     private static final TextAttributesKey[] EMPTY = TextAttributesKey.EMPTY_ARRAY;
 
     @Override

@@ -1,8 +1,8 @@
 # Aurora Changelog
-## Aurora 0.1.0 "Southern"
-- *Fisrt version of language
+## [0.1.0-alpha-build1] - 2026/03/18
+- Alpha Version of Language
+- Codename: "Southern"
+### Added
 - Basic Language Implementation
-- Java Runtime / Stdlib
-- Unfinished or Unimplemented Features:
-  - `thread` statement
-  - `async`/`await`
+- Early VM Implementation Written in Java
+- 

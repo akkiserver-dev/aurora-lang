@@ -1,6 +1,7 @@
 package aurora;
 
 import aurora.analyzer.AuroraDiagnostic;
+import aurora.analyzer.ModuleResolver;
 import aurora.compiler.Compiler;
 import aurora.compiler.TypeErrorException;
 import aurora.lsp.AuroraLanguageServer;
@@ -21,6 +22,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 
 /**
@@ -227,9 +229,11 @@ public final class Main implements Runnable {
                 }
 
                 String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
+                ModuleResolver modules = new ModuleResolver();
+                modules.setProjectRoot(Paths.get("."));
 
                 long parseStart = System.nanoTime();
-                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
+                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString(), modules);
                 long parseEnd = System.nanoTime();
 
                 if (outputAst) {
@@ -238,7 +242,7 @@ public final class Main implements Runnable {
                     long compileStart = 0, compileEnd = 0, runStart = 0, runEnd = 0;
                     try {
                         compileStart = System.nanoTime();
-                        Compiler compiler = new Compiler();
+                        Compiler compiler = new Compiler(modules);
                         Chunk rawChunk = compiler.compile(program);
                         compileEnd = System.nanoTime();
 
@@ -328,7 +332,7 @@ public final class Main implements Runnable {
         public Integer call() {
             try {
                 // Initialize server
-                AuroraLanguageServer server = new aurora.lsp.AuroraLanguageServer();
+                AuroraLanguageServer server = new AuroraLanguageServer();
 
                 // Create LSP launcher
                 // We use System.in and System.out for communication
@@ -379,13 +383,15 @@ public final class Main implements Runnable {
         public Integer call() {
             try {
                 String code = Files.readString(sourceFile, StandardCharsets.UTF_8);
+                ModuleResolver modules = new ModuleResolver();
+                modules.setProjectRoot(Paths.get("."));
 
                 long parseStart = System.nanoTime();
-                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString());
+                Program program = AuroraParser.parse(code, sourceFile.getFileName().toString(), modules);
                 long parseEnd = System.nanoTime();
 
                 long compileStart = System.nanoTime();
-                Compiler compiler = new Compiler();
+                Compiler compiler = new Compiler(modules);
                 Chunk chunk = compiler.compile(program);
                 long compileEnd = System.nanoTime();
 

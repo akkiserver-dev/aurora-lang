@@ -7,6 +7,7 @@ import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;
 import aurora.parser.tree.expr.*;
 import aurora.parser.tree.stmt.*;
+import aurora.parser.tree.type.GenericParameter;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -85,6 +86,15 @@ public class SemanticTokenVisitor implements NodeVisitor<Void> {
             prevCol = t.col;
         }
         return result;
+    }
+
+    private void visitTypeParams(List<GenericParameter> typeParams) {
+        if (typeParams == null) return;
+        for (GenericParameter tp : typeParams) {
+            if (tp.loc != null)
+                addToken(tp.loc, TYPE_TYPE, MOD_DECLARATION);
+            tp.constraints.forEach(this::visitTypeNode);
+        }
     }
 
     // --- Core Routing ---
@@ -534,6 +544,10 @@ public class SemanticTokenVisitor implements NodeVisitor<Void> {
     public Void visitClassDecl(ClassDecl decl) {
         if (decl.nameLoc != null)
             addToken(decl.nameLoc, TYPE_CLASS, MOD_DECLARATION);
+        visitTypeParams(decl.typeParams);
+        if (decl.superClass != null)
+            visitTypeNode(decl.superClass);
+        decl.interfaces.forEach(this::visitTypeNode);
         if (decl.members != null)
             decl.members.forEach(this::visitDeclaration);
         return null;
@@ -572,6 +586,7 @@ public class SemanticTokenVisitor implements NodeVisitor<Void> {
     public Void visitFunctionDecl(FunctionDecl decl) {
         if (decl.nameLoc != null)
             addToken(decl.nameLoc, TYPE_FUNCTION, MOD_DECLARATION);
+        visitTypeParams(decl.typeParams);
         if (decl.params != null)
             decl.params.forEach(this::visitParamDecl);
         if (decl.returnType != null)
@@ -592,6 +607,12 @@ public class SemanticTokenVisitor implements NodeVisitor<Void> {
     public Void visitRecordDecl(RecordDecl decl) {
         if (decl.nameLoc != null)
             addToken(decl.nameLoc, TYPE_CLASS, MOD_DECLARATION);
+        visitTypeParams(decl.typeParams); // 追加
+        if (decl.parameters != null)
+            decl.parameters.forEach(this::visitClassParamDecl);
+        decl.implementsInterfaces.forEach(this::visitTypeNode);
+        if (decl.members != null)
+            decl.members.forEach(this::visitDeclaration);
         return null;
     }
 
@@ -604,6 +625,10 @@ public class SemanticTokenVisitor implements NodeVisitor<Void> {
     public Void visitInterfaceDecl(InterfaceDecl decl) {
         if (decl.nameLoc != null)
             addToken(decl.nameLoc, TYPE_CLASS, MOD_DECLARATION);
+        visitTypeParams(decl.typeParams);
+        decl.interfaces.forEach(this::visitTypeNode);
+        if (decl.members != null)
+            decl.members.forEach(this::visitDeclaration);
         return null;
     }
 

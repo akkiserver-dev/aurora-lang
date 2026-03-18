@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "aurora"
-    version = "0.1.0"
+    version = "0.1.0-alpha"
 
     repositories {
         mavenCentral()
@@ -39,7 +39,7 @@ subprojects {
 
                 groupId = "aurora"
                 artifactId = project.name
-                version = "0.1.0"
+                version = "0.1.0-alpha"
 
                 pom {
                     name = project.name

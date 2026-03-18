@@ -1,6 +1,8 @@
 package aurora.compiler;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,6 +22,10 @@ public class CompiledClass {
 
     /** A map of method names to their respective compiled function data. */
     public final Map<String, CompiledFunction> methods = new HashMap<>();
+
+    public List<String> interfaceNames = new ArrayList<>();
+
+    public boolean isTrait = false;
 
     /**
      * Constructs a new CompiledClass with the specified name.
