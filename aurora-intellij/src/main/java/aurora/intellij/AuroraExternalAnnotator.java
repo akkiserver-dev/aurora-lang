@@ -37,8 +37,7 @@ public class AuroraExternalAnnotator extends ExternalAnnotator<AuroraExternalAnn
         if (info.projectRoot() != null) {
             modules.setProjectRoot(info.projectRoot());
         }
-        AnalysisResult result = new AuroraAnalyzer()
-                .analyze(info.text(), info.filePath(), modules);
+        AnalysisResult result = new AuroraAnalyzer().analyze(info.text(), info.filePath(), modules);
         return result.diagnostics();
     }
 

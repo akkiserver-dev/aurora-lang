@@ -1,6 +1,9 @@
 package aurora.compiler;
 
+import aurora.analyzer.AuroraDiagnostic;
+import aurora.analyzer.ModuleResolver;
 import aurora.analyzer.TypeChecker;
+import aurora.analyzer.TypeInferenceEngine;
 import aurora.parser.tree.*;
 import aurora.parser.tree.decls.*;
 import aurora.parser.tree.expr.*;
@@ -61,6 +64,8 @@ public class Compiler implements NodeVisitor<Void> {
     /** The name of the file currently being compiled. */
     private String currentFileName;
 
+    private ModuleResolver modules;
+
     /**
      * Context information for loops, used to support {@code break} and {@code continue} statements.
      *
@@ -87,6 +92,8 @@ public class Compiler implements NodeVisitor<Void> {
     public Compiler() {
         this.libraryPaths.add(Paths.get("aurora/lib"));
         this.libraryPaths.add(Paths.get("."));
+        this.modules = new ModuleResolver();
+        this.modules.setProjectRoot(Paths.get("."));
     }
 
     /**
@@ -101,10 +108,18 @@ public class Compiler implements NodeVisitor<Void> {
         this.currentFileName = program.loc.sourceName();
         this.chunk = new Chunk(this.currentFileName);
 
-        TypeChecker checker = new TypeChecker(program, null);
+        TypeChecker checker = new TypeChecker(program, modules);
         checker.visitProgram(program);
         if (!checker.getDiagnostics().isEmpty()) {
-            throw new TypeErrorException(checker.getDiagnostics());
+            boolean hasError = checker.getDiagnostics().stream()
+                    .anyMatch(d -> d.severity() == AuroraDiagnostic.Severity.ERROR);
+            if (hasError) {
+                throw new TypeErrorException(checker.getDiagnostics());
+            } else {
+                for (AuroraDiagnostic d : checker.getDiagnostics()) {
+                    System.err.print(AuroraDiagnostic.formatDiagnostic(d, program.loc.sourceName()));
+                }
+            }
         }
         this.globals = checker.getGlobals();
 

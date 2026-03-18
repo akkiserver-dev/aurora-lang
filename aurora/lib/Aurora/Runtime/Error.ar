@@ -1,5 +1,5 @@
 namespace Aurora.Runtime
 
-pub trait Error {
-    pub fun reason() -> string
+pub class Error(reason: string) : Throwable {
+    pub fun reason() -> string => self.reason
 }

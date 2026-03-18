@@ -1,8 +1,11 @@
 package aurora;
 
+import aurora.analyzer.AuroraDiagnostic;
 import aurora.compiler.Compiler;
+import aurora.compiler.TypeErrorException;
 import aurora.lsp.AuroraLanguageServer;
 import aurora.parser.AuroraParser;
+import aurora.parser.SyntaxErrorException;
 import aurora.parser.tree.Program;
 import aurora.runtime.Chunk;
 import aurora.runtime.VM;
@@ -49,7 +52,7 @@ public final class Main implements Runnable {
         StringBuilder sb = new StringBuilder();
 
         // "error: <message>"
-        sb.append(RED).append(BOLD).append("error").append(RESET)
+        sb.append(RED).append(BOLD).append(d.severity()).append(RESET)
                 .append(BOLD).append("[type]: ").append(d.message()).append(RESET).append("\n");
 
         if (d.location() == null) return sb.toString();
@@ -260,13 +263,13 @@ public final class Main implements Runnable {
                     }
                 }
                 return 0;
-            } catch (aurora.parser.SyntaxErrorException e) {
+            } catch (SyntaxErrorException e) {
                 System.err.println(e.getMessage());
                 return 1;
-            } catch (aurora.compiler.TypeErrorException e) {
+            } catch (TypeErrorException e) {
                 String src = null;
                 try { src = Files.readString(sourceFile, StandardCharsets.UTF_8); } catch (IOException ignored) {}
-                for (aurora.analyzer.AuroraDiagnostic d : e.getDiagnostics()) {
+                for (AuroraDiagnostic d : e.getDiagnostics()) {
                     System.err.print(formatDiagnostic(d, src));
                 }
                 return 1;

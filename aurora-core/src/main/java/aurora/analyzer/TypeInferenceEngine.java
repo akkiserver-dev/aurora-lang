@@ -88,7 +88,7 @@ public final class TypeInferenceEngine {
     // -----------------------------------------------------------------------
 
     private final Program program;
-    private final ModuleResolver modules; // may be null
+    private final ModuleResolver modules;
 
     /**
      * Scope stack: each entry maps a variable / parameter name to its type.
@@ -131,12 +131,7 @@ public final class TypeInferenceEngine {
 
     public TypeInferenceEngine(Program program, ModuleResolver modules) {
         this.program = program;
-        this.modules  = modules;
-    }
-
-    /** Convenience constructor without a module resolver. */
-    public TypeInferenceEngine(Program program) {
-        this(program, null);
+        this.modules = modules;
     }
 
     // -----------------------------------------------------------------------
@@ -164,6 +159,10 @@ public final class TypeInferenceEngine {
         TypeNode declared = decl.returnType;
         if (declared != null && !isVoid(declared)) return declared;
         return inferredReturnTypes.getOrDefault(decl, VOID);
+    }
+
+    public IdentityHashMap<FunctionDecl, TypeNode> getInferredReturnTypes() {
+        return inferredReturnTypes;
     }
 
     /**
@@ -202,6 +201,8 @@ public final class TypeInferenceEngine {
     private void collectGlobals(Program prog) {
         if (prog.statements == null) return;
 
+        modules.loadImplicitImports().forEach(globals::putIfAbsent);
+
         // 1. Local top-level declarations
         for (Statement s : prog.statements) {
             if (s instanceof Declaration d && d.name != null) {
@@ -210,7 +211,7 @@ public final class TypeInferenceEngine {
         }
 
         // 2. Imported module declarations
-        if (modules != null && prog.imports != null) {
+        if (prog.imports != null) {
             for (Program.Import imp : prog.imports) {
                 Program mod = modules.loadModule(imp.path);
                 if (mod == null || mod.statements == null) continue;
@@ -299,10 +300,7 @@ public final class TypeInferenceEngine {
                 TypeNode t = inferExpr(s.expr);
                 yield (ctx == BlockContext.FUNCTION) ? t : VOID;
             }
-            case ControlStmt.ReturnStmt s -> {
-                TypeNode t = (s.value != null) ? inferExpr(s.value) : VOID;
-                yield t;
-            }
+            case ControlStmt.ReturnStmt s -> (s.value != null) ? inferExpr(s.value) : VOID;
             case FieldDecl s -> {
                 visitFieldDecl(s);
                 yield VOID;
@@ -417,7 +415,7 @@ public final class TypeInferenceEngine {
                 }
             }
 
-            inferredReturnTypes.put(decl, resolved != null ? resolved : VOID);
+            inferredReturnTypes.put(decl, resolved);
             decl.returnType = resolved;
         }
 

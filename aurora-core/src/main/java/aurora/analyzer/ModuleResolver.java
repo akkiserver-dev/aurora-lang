@@ -9,10 +9,15 @@ import aurora.parser.tree.decls.FunctionDecl;
 import aurora.parser.tree.decls.InterfaceDecl;
 import aurora.parser.tree.decls.RecordDecl;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 /**
  * Resolves external module imports for the Aurora LSP.
@@ -34,7 +39,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * </p>
  */
 public class ModuleResolver {
-
     /** Cache mapping import paths (e.g., "Aurora.Io") to their parsed {@link Program} ASTs. */
     private final Map<String, Program> moduleCache = new ConcurrentHashMap<>();
 
@@ -115,6 +119,37 @@ public class ModuleResolver {
             }
         }
         return null;
+    }
+
+    public Map<String, Declaration> loadImplicitImports() {
+        Map<String, Declaration> result = new HashMap<>();
+        if (projectRoot == null) return result;
+
+        Path runtimeRoot = projectRoot.resolve("aurora/lib/Aurora/Runtime");
+        if (!Files.exists(runtimeRoot)) return result;
+
+        try (Stream<Path> fs = Files.walk(runtimeRoot)){
+            fs
+                    .filter(p -> p.toString().endsWith(".ar"))
+                    .forEach(file -> {
+                        Path rel = projectRoot.resolve("aurora/lib").relativize(file);
+                        String fqn = rel.toString()
+                                .replace(java.io.File.separatorChar, '.')
+                                .replaceAll("\\.ar$", "");
+
+                        Program mod = loadModule(fqn);
+                        if (mod == null || mod.statements == null) return;
+
+                        for (Statement stmt : mod.statements) {
+                            if (stmt instanceof Declaration d && d.name != null) {
+                                result.putIfAbsent(fqn, d);
+                                result.putIfAbsent(d.name, d);
+                            }
+                        }
+                    });
+        } catch (IOException ignored) {}
+
+        return result;
     }
 
     /**

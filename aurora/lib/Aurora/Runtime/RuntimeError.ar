@@ -1,13 +1,3 @@
 namespace Aurora.Runtime
 
-pub class RuntimeError : Error {
-    local val reason: string 
-
-    constructor(reason: string) {
-        self.reason = reason
-    }
-
-    pub override fun reason() -> string {
-        return self.reason
-    }
-}
+pub class RuntimeError(reason: string) : Error(reason) {}

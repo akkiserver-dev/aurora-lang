@@ -1,6 +1,7 @@
 package aurora.parser;
 
 import aurora.analyzer.ASTPostProcessor;
+import aurora.analyzer.ModuleResolver;
 import aurora.analyzer.TypeInferenceEngine;
 import aurora.compiler.antlr.AuroraLexer;
 import aurora.compiler.antlr.AuroraParser.*;

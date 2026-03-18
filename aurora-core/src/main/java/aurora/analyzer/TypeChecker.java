@@ -52,6 +52,10 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         this.modules = modules;
         this.ANY = new TypeNode(new aurora.parser.SourceLocation(), "Any");
         this.NONE = new TypeNode(new aurora.parser.SourceLocation(), "none");
+
+        if (modules != null) {
+            globals.putAll(modules.loadImplicitImports());
+        }
     }
 
     /**
@@ -223,6 +227,45 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
     }
 
     /**
+     * Determines if a type can be cast or type-checked against another type.
+     * Unlike isAssignable, this is bi-directional to allow downcasting or checking sub-types.
+     *
+     * @param left  The actual type of the expression.
+     * @param right The target type to check against.
+     * @return {@code true} if there's a possibility that left is or can become right.
+     */
+    private boolean isCastable(TypeNode left, TypeNode right) {
+        if (left == null || right == null) return true;
+
+        // Either side being "Any" allows the check
+        if (left.name.equals("Any") || right.name.equals("Any")) return true;
+
+        // 1. Upcasting: Is left a subtype of right? (e.g., String is Object)
+        if (isAssignable(right, left)) return true;
+
+        // 2. Downcasting: Is right a subtype of left? (e.g., Object could be String)
+        if (isAssignable(left, right)) return true;
+
+        // 3. Numeric conversions (e.g., int to double or vice-versa)
+        if (numericRank(left.name) >= 0 && numericRank(right.name) >= 0) {
+            return true;
+        }
+
+        // Optional: Interface check.
+        // In Java, you can almost always check a non-final class against an interface.
+        Node leftDecl = SymbolResolver.resolveTypeName(currentProgram, left.name, modules);
+        Node rightDecl = SymbolResolver.resolveTypeName(currentProgram, right.name, modules);
+
+        if (leftDecl instanceof InterfaceDecl || rightDecl instanceof InterfaceDecl) {
+            // If one is an interface, it's potentially castable unless the other is a final class
+            // that doesn't implement it. For simplicity, we'll allow it.
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Recursively checks if a declaration inherits from a target type name.
      *
      * @param decl       The declaration to check (Class, Record, or Interface).
@@ -278,6 +321,30 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         return false;
     }
 
+    public void dumpState(TypeChecker typeChecker, TypeInferenceEngine inferenceEngine, Program program) {
+        System.out.println("=== Aurora Compiler State Dump ===");
+
+        System.out.println("\n[Global Symbols]");
+        typeChecker.getGlobals().forEach((name, decl) -> {
+            String type = (decl instanceof FunctionDecl f) ? "Function" :
+                    (decl instanceof ClassDecl) ? "Class" : "Declaration";
+            System.out.printf("  %-15s : %s\n", name, type);
+        });
+
+        System.out.println("\n[Inferred Return Types]");
+        inferenceEngine.getInferredReturnTypes().forEach((func, type) -> {
+            System.out.printf("  %-15s -> %s\n", func.name, type);
+        });
+
+        System.out.println("\n[Imported Modules]");
+        if (program.imports != null) {
+            for (Program.Import imp : program.imports) {
+                System.out.println("  use " + imp.path);
+            }
+        }
+        System.out.println("\n==================================");
+    }
+
     // --- VISITOR METHODS ---
     @Override
     public TypeNode visitNode(Node node) {
@@ -296,6 +363,7 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
         for (Statement stmt : program.statements) {
             visitStatement(stmt);
         }
+
         return ANY;
     }
 
@@ -521,7 +589,10 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitThrowStmt(ControlStmt.ThrowStmt stmt) {
-        visitExpr(stmt.value);
+        TypeNode throwable = visitExpr(stmt.value);
+        if (inherits(throwable, "")) {
+
+        }
         return ANY;
     }
 
@@ -611,8 +682,27 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitClassParamDecl(ClassParamDecl decl) {
-        reportWarn(decl, "Unable to inference");
-        return ANY;
+        TypeNode paramType = decl.type != null ? decl.type : ANY;
+        if (paramType == ANY) {
+            paramType = visitExpr(decl.defaultValue);
+        }
+
+        if (decl.defaultValue != null) {
+            TypeNode defaultType = visitExpr(decl.defaultValue);
+
+            if (paramType == ANY) {
+                paramType = defaultType;
+            } else {
+                if (!isAssignable(paramType, defaultType)) {
+                    reportError(decl.defaultValue,
+                            "Default value of type '" + defaultType + "' is not assignable to '" + paramType + "'");
+                }
+            }
+        }
+
+        declareVariable(decl.name, paramType);
+
+        return paramType;
     }
 
     @Override
@@ -654,23 +744,31 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitExpr(Expr expr) {
-        if (expr instanceof LiteralExpr e)
-            return visitLiteralExpr(e);
-        if (expr instanceof BinaryExpr e)
-            return visitBinaryExpr(e);
-        if (expr instanceof UnaryExpr e)
-            return visitUnaryExpr(e);
-        if (expr instanceof CallExpr e)
-            return visitCallExpr(e);
-        if (expr instanceof AccessExpr e)
-            return visitAccessExpr(e);
-        if (expr instanceof SelfExpr e)
-            return visitSelfExpr(e);
-        if (expr instanceof RangeExpr e)
-            return visitRangeExpr(e);
-        // Add others as needed
-        reportWarn(expr, "Unable to inference: [" + expr.getClass().getName() + "]");
-        return ANY;
+        return switch (expr) {
+            case null -> ANY;
+            case LiteralExpr e -> visitLiteralExpr(e);
+            case BinaryExpr e -> visitBinaryExpr(e);
+            case UnaryExpr e -> visitUnaryExpr(e);
+            case CallExpr e -> visitCallExpr(e);
+            case AccessExpr e -> visitAccessExpr(e);
+            case IndexExpr e -> visitIndexExpr(e);
+            case CastExpr e -> visitCastExpr(e);
+            case TypeCheckExpr e -> visitTypeCheckExpr(e);
+            case RangeExpr e -> visitRangeExpr(e);
+            case IfExpr e -> visitIfExpr(e);
+            case ElvisExpr e -> visitElvisExpr(e);
+            case LambdaExpr e -> visitLambdaExpr(e);
+            case MatchExpr e -> visitMatchExpr(e);
+            case SelfExpr e -> visitSelfExpr(e);
+            case SuperExpr e -> visitSuperExpr(e);
+            case AwaitExpr e -> visitAwaitExpr(e);
+            case ArrayExpr e -> visitArrayExpr(e);
+            case ThreadExpr e -> visitThreadExpr(e);
+            default -> {
+                reportWarn(expr, "Unhandled expression type: " + expr.getClass().getSimpleName());
+                yield ANY;
+            }
+        };
     }
 
     @Override
@@ -831,15 +929,14 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitCastExpr(CastExpr expr) {
-        TypeNode value = visitExpr(expr.expr);
-        TypeNode clazz = expr.type;
-        boolean isValid = isAssignable(value, clazz);
-        if (!isValid) {
+        TypeNode valueType = visitExpr(expr.expr);
+        TypeNode targetType = expr.type;
 
+        if (!isCastable(valueType, targetType)) {
+            reportError(expr, "inconvertible types: cannot cast '" + valueType + "' to '" + targetType + "'");
         }
 
-        reportWarn(expr, "Unable to inference");
-        return ANY;
+        return targetType;
     }
 
     @Override
@@ -854,7 +951,12 @@ public class TypeChecker implements NodeVisitor<TypeNode> {
 
     @Override
     public TypeNode visitTypeCheckExpr(TypeCheckExpr expr) {
-        return ANY;
+        TypeNode left = visitExpr(expr.check);
+        TypeNode right = expr.type;
+        if (!isCastable(left, right)) {
+            reportError(expr, "inconvertible types: cannot check type between '" + left + "' and '" + right + "'");
+        }
+        return new TypeNode(expr.loc, "bool");
     }
 
     @Override
