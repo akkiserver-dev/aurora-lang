@@ -34,13 +34,22 @@ public final class AuroraAnalyzer {
         }
 
         if (program != null) {
+            if (modules != null) {
+                try {
+                    ASTPostProcessor.process(program, modules);
+                } catch (Exception e) {
+                    String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    diagnostics.add(AuroraDiagnostic.error(null, "Post-processing error: " + msg, SOURCE_INTERNAL));
+                }
+            }
+
             try {
                 TypeChecker typeChecker = new TypeChecker(program, modules);
                 typeChecker.visitProgram(program);
                 diagnostics.addAll(typeChecker.getDiagnostics());
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                diagnostics.add(AuroraDiagnostic.error(null, "Internal type-check error: " + msg, SOURCE_INTERNAL));
+                diagnostics.add(AuroraDiagnostic.error(null, "Type checking error: " + msg, SOURCE_INTERNAL));
             }
         }
 

@@ -1,5 +1,6 @@
 package aurora.parser;
 
+import aurora.analyzer.ASTPostProcessor;
 import aurora.analyzer.TypeInferenceEngine;
 import aurora.compiler.antlr.AuroraLexer;
 import aurora.compiler.antlr.AuroraParser.*;
@@ -85,7 +86,9 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
         }
 
         AuroraParser visitor = new AuroraParser(sourceName, tokens);
-        return (Program) visitor.visitCompilationUnit(tree);
+        Program program = (Program) visitor.visitCompilationUnit(tree);
+        ASTPostProcessor.process(program);
+        return program;
     }
 
     /**
@@ -106,7 +109,9 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
 
         CompilationUnitContext tree = parser.compilationUnit();
         AuroraParser visitor = new AuroraParser(sourceName, tokens);
-        return (Program) visitor.visitCompilationUnit(tree);
+        Program program = (Program) visitor.visitCompilationUnit(tree);
+        ASTPostProcessor.process(program);
+        return program;
     }
 
     public static Program parse(String code) {
@@ -566,19 +571,11 @@ public class AuroraParser extends AuroraParserBaseVisitor<Node> {
                         return (Statement) node;
                     if (node instanceof Expr)
                         return new ExprStmt(node.loc, (Expr) node);
-                    throw new IllegalStateException("'" + node.getClass().getSimpleName() + "' is not a statement");
+                    throw new IllegalStateException("...");
                 })
                 .collect(Collectors.toList());
 
-        BlockStmt block = new BlockStmt(loc(ctx), stmts);
-
-        if (!TypeInferenceEngine.isVoid(block.returnType)
-                && !stmts.isEmpty()
-                && stmts.getLast() instanceof ExprStmt exprStmt) {
-            stmts.set(stmts.size() - 1, new ControlStmt.ReturnStmt(exprStmt.loc, exprStmt.expr));
-        }
-
-        return block;
+        return new BlockStmt(loc(ctx), stmts);
     }
 
     @Override

@@ -31,7 +31,7 @@ public class FunctionDecl extends Declaration {
     public final List<ParamDecl> params;
 
     /** The return type of the function. */
-    public final TypeNode returnType;
+    public TypeNode returnType;
 
     /** The executable body of the function. */
     public final BlockStmt body;

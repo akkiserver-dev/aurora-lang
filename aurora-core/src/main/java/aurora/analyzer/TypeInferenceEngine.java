@@ -239,8 +239,6 @@ public final class TypeInferenceEngine {
         if (context == BlockContext.LOOP) {
             // Loop bodies are always void – visit children for side-effects only.
             for (Statement s : block.statements) visitStatement(s);
-            blockType = VOID;
-
         } else {
             // Visit all statements; remember the type the last one produces.
             for (int i = 0; i < block.statements.size(); i++) {
@@ -353,6 +351,7 @@ public final class TypeInferenceEngine {
             // Infer from the body's annotated return type.
             TypeNode inferred = decl.body.returnType;
             inferredReturnTypes.put(decl, inferred != null ? inferred : VOID);
+            decl.returnType = inferred;
         }
 
         currentFunctionReturnType = outer;
@@ -419,7 +418,7 @@ public final class TypeInferenceEngine {
             case RangeExpr   e  -> new TypeNode(e.loc, "Range");
             case ArrayExpr   e  -> inferArray(e);
             case IndexExpr   e  -> inferIndex(e);
-            case LambdaExpr  e  -> UNKNOWN; // lambda types are complex, skip
+            case LambdaExpr  e  -> UNKNOWN; // lambda types are complex, so currently skip processing
             case ElvisExpr   e  -> inferExpr(e.left);
             default             -> UNKNOWN;
         };
@@ -531,6 +530,11 @@ public final class TypeInferenceEngine {
             visitBlock(e.elseBlock, BlockContext.OTHER);
             elseType = e.elseBlock.returnType;
         }
+
+        if (isVoid(thenType)) {
+            
+        }
+
         // Union: if both branches agree, return that; otherwise widen to UNKNOWN.
         return (thenType != null && elseType != null
                 && thenType.name.equals(elseType.name))
