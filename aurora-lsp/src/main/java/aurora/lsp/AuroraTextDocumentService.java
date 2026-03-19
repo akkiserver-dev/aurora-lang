@@ -35,6 +35,8 @@ public class AuroraTextDocumentService implements TextDocumentService {
     /** The parent language server instance. */
     private final AuroraLanguageServer server;
 
+    private final Map<String, List<Diagnostic>> diagnosticsCache = new ConcurrentHashMap<>();
+
     /** Sentinel value representing a verified lack of hover information for a position. */
     private static final Hover EMPTY_HOVER = new Hover(new MarkupContent(MarkupKind.MARKDOWN, ""));
 
@@ -65,6 +67,12 @@ public class AuroraTextDocumentService implements TextDocumentService {
         LspLogger.log("didOpen: " + uri);
         initProjectRoot(uri);
         hoverCache.keySet().removeIf(k -> k.startsWith(uri + ":"));
+        
+        List<Diagnostic> cached = diagnosticsCache.get(uri);
+        if (cached != null) {
+            server.getClient().publishDiagnostics(new PublishDiagnosticsParams(uri, cached));
+        }
+
         validateDocument(uri, params.getTextDocument().getText());
     }
 
@@ -112,8 +120,6 @@ public class AuroraTextDocumentService implements TextDocumentService {
         String uri = params.getTextDocument().getUri();
         astMap.remove(uri);
         hoverCache.keySet().removeIf(k -> k.startsWith(uri + ":"));
-        server.getClient().publishDiagnostics(
-                new PublishDiagnosticsParams(uri, Collections.emptyList()));
     }
 
     @Override
@@ -397,6 +403,8 @@ public class AuroraTextDocumentService implements TextDocumentService {
         List<Diagnostic> lspDiags = result.diagnostics().stream()
                 .map(AuroraTextDocumentService::toLspDiagnostic)
                 .collect(Collectors.toList());
+
+        diagnosticsCache.put(uri, lspDiags);
 
         try {
             server.getClient().publishDiagnostics(new PublishDiagnosticsParams(uri, lspDiags));
