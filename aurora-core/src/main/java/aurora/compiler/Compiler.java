@@ -2356,7 +2356,7 @@ public class Compiler implements NodeVisitor<Void> {
 
         // Evaluate left and stash in a hidden local.
         visitExpr(expr.left);
-        beginScope();
+        scopeDepth++;  // beginScopeの代わり（POPを出さないendScopeのため）
         String tmpName = "$elvis_" + chunk.count;
         addLocal(tmpName);
         int tmpIdx = resolveLocal(tmpName);
@@ -2388,7 +2388,12 @@ public class Compiler implements NodeVisitor<Void> {
         visitExpr(expr.right);
 
         chunk.code[jumpToEnd] = chunk.count;
-        endScope(line);
+
+        // スコープを終了するが、スタックトップの結果値はPOPしない
+        scopeDepth--;
+        while (!locals.isEmpty() && locals.getLast().depth > scopeDepth) {
+            locals.removeLast();
+        }
 
         return null;
     }
