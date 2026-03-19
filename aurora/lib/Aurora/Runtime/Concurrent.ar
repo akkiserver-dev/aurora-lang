@@ -1,8 +1,5 @@
 namespace Aurora.Runtime.Concurrent
 
-/**
- * フューチャーインターフェース
- */
 pub trait Future<T> {
     pub fun wait() -> T?
     pub fun wait(timeoutMillis: long) -> T?
@@ -10,14 +7,8 @@ pub trait Future<T> {
     pub fun isDone() -> bool
 }
 
-/**
- * 送信可能インターフェース (スレッド間での安全なデータ共有を示すマーカー)
- */
 pub trait Sendable {}
 
-/**
- * ミューテックス（排他制御）
- */
 pub class Mutex<T> : Sendable {
     var value: T
 
